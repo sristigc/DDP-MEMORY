@@ -1,0 +1,7 @@
+# Never commit exports or secrets
+*.env
+.env*
+exports/
+*.export.json
+payload*.json
+node_modules/
