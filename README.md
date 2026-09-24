@@ -29,6 +29,7 @@ starts with the history instead of from zero.
 | `.gitignore` | Keeps exports, payloads, and `.env` files out of git. |
 | `viewer-proxy/` | Password-protected Caddy proxy for the dashboard (replaces `XavTo/caddy-zero-trust`). Deployed as a second Railway service with Root Directory `viewer-proxy`. |
 | `agent/` | **DDP-AGENT** — jira-poller, agent-runner, notifier + shared job store library (section 8). |
+| `galaxy/system/` | Service + group manifests (`.claude`-style `.md` files) that generate the System canvas (section 6b). |
 | `galaxy/` | **DDP Galaxy** — live 3D/2D constellation graph (clusters per person, highlighted shared context). Node service, no npm deps. Served at `/galaxy` behind the dashboard login. |
 | `hooks/session-owner.mjs` | Claude Code SessionStart hook: records which person owns each session. |
 | `tools/tag-sessions.mjs` | Tags backfilled sessions with their owner. |
@@ -292,6 +293,33 @@ DUMMY=1 PORT=4000 node server.mjs          # open http://localhost:4000/galaxy/
 
 ---
 
+## 6b. DDP System canvas (`/galaxy/system.html`)
+
+A live map of every service, grouped by layer: Team laptops → Edge → Memory → Graph, and
+Workers → Data → Integrations. Each service shows its description and live status; each group shows
+"N of N services operational". Connections animate only while traffic flows:
+
+| Line | Meaning |
+|---|---|
+| bright white, fast dashes | traffic right now (e.g. runner processed a job, notifier sent a message, new observations reached memory, a job was queued) — lasts 2 minutes |
+| grey, slow dashes | heartbeat: the caller polls continuously (galaxy → agentmemory, agent-runner → Postgres) |
+| faint, static | idle |
+
+Click a service for status detail, what it calls and what calls it.
+
+**Manifests** — the canvas is generated from `galaxy/system/`, organised like `.claude/`:
+```
+galaxy/system/
+  groups/<group>.md      name, title, order, description
+  services/<service>.md  name, title, group, icon, description, railway, health, auth, calls, cron + notes body
+```
+To add a service: add one `.md` in `services/` (and a group if needed). `health` URLs use `${RUNNER_URL}`,
+`${NOTIFIER_URL}`, `${VIEWER_URL}`, `${AGENTMEMORY_URL}` from the galaxy service's env; defaults are the
+Railway private hostnames, so no extra variables are required. Health checks run every 10s
+(`SYSTEM_POLL_MS`) over the private network; nothing is exposed publicly.
+
+---
+
 ## 7. Obsidian
 
 The same graph as Obsidian notes: `DDP-Galaxy/People|Tickets|Services|Files`, linked with `[[...]]`,
@@ -368,6 +396,8 @@ messages instead of sending them, so the services can be deployed before the sec
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | Mirror: every push now also goes to the private github.com/sristtiii/DDP-MEMORY (second push URL on `origin`). |
+| 2026-09-24 | **System canvas** at `/galaxy/system.html`: services grouped by layer from `galaxy/system/**/*.md` manifests (same convention as `.claude/`), live health over the private network, connections animate when busy (white, fast) or polling (grey, slow). Linked from the graph header. 6 new tests. |
 | 2026-09-24 | Person globes smaller (radius 16 + 3·√items) and fainter (opacity 0.025). |
 | 2026-09-24 | **DDP-AGENT** (`agent/`): jira-poller (5-hourly cron), agent-runner (dry-run pipeline of the 9 Phase 1 steps, local hand-off for logs, resume API), notifier (Google Chat), Postgres job store; shared library; 10 tests. viewer-proxy routes `/agent/*` to the runner. |
 | 2026-09-24 | Person ↔ work threads restored: the model adds direct `works` links (person → ticket/service/file, sessions collapsed) shown whenever sessions are hidden, so shared items visibly connect to every owner. Brighter threads (works #8e8e96, DDP #a6a6ac, shared #e6e6ea, opacity 0.5). |

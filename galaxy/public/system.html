@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDP System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#000000; --card:#0c0c0f; --card-2:#121216; --line:#24242a; --text:#e4e4e8; --muted:#8b8b93; --dim:#55555c;
+    --up:#d9d9de; --down:#ff6b6b; --warn:#c9a86b; --live:#ffffff;
+    --display:"Space Grotesk","Segoe UI",sans-serif; --body:"Inter","Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font:13px/1.5 var(--body); }
+  body { padding-inline:20px; padding-block:0 40px; }
+  header { position:sticky; top:0; z-index:3; display:flex; align-items:center; gap:14px; padding:12px 0; background:rgba(0,0,0,.92); border-bottom:1px solid var(--line); }
+  header h1 { font:700 14px var(--display); letter-spacing:.06em; margin:0; }
+  header a { color:var(--muted); text-decoration:none; font-size:12px; }
+  header a:hover { color:var(--text); }
+  #status { font:600 10px var(--display); letter-spacing:.16em; color:var(--muted); }
+  #summary { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .legend { display:flex; flex-wrap:wrap; gap:18px; margin:14px 0 4px; color:var(--muted); font-size:12px; }
+  .legend span { display:inline-flex; align-items:center; gap:8px; }
+  .legend svg { overflow:visible; }
+
+  #board { position:relative; margin-top:12px; }
+  #wires { position:absolute; inset:0; pointer-events:none; overflow:visible; }
+  .grid { position:relative; display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:56px 48px; }
+  .group { position:relative; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:12px; }
+  .group h2 { font:600 14px var(--display); margin:0; display:flex; align-items:center; gap:8px; }
+  .group p.desc { margin:0; color:var(--muted); font-size:12px; }
+  .tiles { display:grid; gap:8px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .tile { display:grid; grid-template-columns:32px 1fr; gap:4px 10px; align-items:start; padding:8px; border-radius:6px; border:1px solid transparent; cursor:pointer; }
+  .tile:hover, .tile.on { border-color:var(--line); background:#17171c; }
+  .tile .ico { grid-row:span 2; width:32px; height:32px; border-radius:7px; background:#1b1b21; border:1px solid var(--line); display:grid; place-items:center; position:relative; }
+  .tile .ico svg { width:17px; height:17px; stroke:var(--text); fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .tile .dot { position:absolute; right:-3px; bottom:-3px; width:9px; height:9px; border-radius:50%; border:2px solid var(--card-2); background:var(--dim); }
+  .tile[data-state="up"] .dot, .tile[data-state="scheduled"] .dot, .tile[data-state="idle"] .dot { background:var(--up); }
+  .tile[data-state="active"] .dot { background:var(--live); box-shadow:0 0 8px var(--live); }
+  .tile[data-state="down"] .dot { background:var(--down); }
+  .tile .name { font:600 13px var(--display); display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .tile .name small { font:500 11px var(--body); color:var(--muted); }
+  .tile .what { color:var(--muted); font-size:12px; }
+  .foot { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+  .foot svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; }
+  .foot.bad { color:var(--down); }
+
+  /* connections */
+  .wire { fill:none; stroke:var(--dim); stroke-width:1.2; stroke-dasharray:5 6; opacity:.55; }
+  .wire.heartbeat { stroke:var(--muted); opacity:.85; animation:flow 2.4s linear infinite; }
+  .wire.busy { stroke:var(--live); stroke-width:1.8; opacity:1; animation:flow .7s linear infinite; filter:drop-shadow(0 0 3px rgba(255,255,255,.7)); }
+  .wire.focus { opacity:1; stroke:var(--text); }
+  .arrow { fill:var(--dim); }
+  @keyframes flow { to { stroke-dashoffset:-22; } }
+  @media (prefers-reduced-motion: reduce) { .wire.heartbeat, .wire.busy { animation:none; } }
+
+  #detail { position:fixed; right:20px; bottom:20px; width:min(380px, calc(100% - 40px)); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; display:none; z-index:4; }
+  #detail h3 { font:700 15px var(--display); margin:0 0 4px; }
+  #detail .kv { display:grid; grid-template-columns:86px 1fr; gap:4px 10px; margin-top:10px; }
+  #detail dt { color:var(--muted); }
+  #detail dd { margin:0; word-break:break-word; }
+  #detail .close { float:right; cursor:pointer; color:var(--muted); background:none; border:0; font-size:14px; }
+  @media (max-width: 640px) { .grid { gap:28px; } #summary { display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>DDP System</h1>
+  <span id="status">CONNECTING…</span>
+  <a href="./">← DDP MEMORY Graph</a>
+  <span id="summary"></span>
+</header>
+
+<div class="legend">
+  <span><svg width="36" height="6"><line x1="0" y1="3" x2="36" y2="3" class="wire busy"/></svg>traffic right now</span>
+  <span><svg width="36" height="6"><line x1="0" y1="3" x2="36" y2="3" class="wire heartbeat"/></svg>polling (heartbeat)</span>
+  <span><svg width="36" height="6"><line x1="0" y1="3" x2="36" y2="3" class="wire"/></svg>idle</span>
+</div>
+
+<div id="board">
+  <svg id="wires"><defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+  </defs></svg>
+  <div class="grid" id="grid"></div>
+</div>
+
+<aside id="detail" aria-live="polite"></aside>
+
+<script type="module" src="system.js"></script>
+</body>
+</html>

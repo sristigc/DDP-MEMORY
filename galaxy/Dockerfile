@@ -5,6 +5,7 @@ COPY package.json ./
 COPY server.mjs ./
 COPY lib ./lib
 COPY public ./public
+COPY system ./system
 USER node
 EXPOSE 8080
 CMD ["node", "server.mjs"]

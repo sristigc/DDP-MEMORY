@@ -1,5 +1,6 @@
 // DDP Galaxy: live 3D knowledge graph of who worked on what.
-// Serves /galaxy (UI), /galaxy/api/graph (snapshot), /galaxy/api/events (SSE live feed).
+// Serves /galaxy (UI), /galaxy/system.html (service canvas), /galaxy/api/graph, /galaxy/api/system,
+// and /galaxy/api/events (SSE: graph touches + system status).
 // Runs behind the viewer-proxy basic auth; the agentmemory secret never reaches the browser.
 
 import http from "node:http";
@@ -8,6 +9,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildGraph, touchedIds } from "./lib/model.mjs";
 import { AgentmemorySource, DummySource } from "./lib/source.mjs";
+import { SystemMonitor, loadManifests } from "./lib/system.mjs";
+import { DUMMY_ENV, makeDummyFetch } from "./lib/system-dummy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(HERE, "public");
@@ -30,6 +33,16 @@ const source = cfg.dummy
       defaultPerson: (process.env.DEFAULT_PERSON || "").toLowerCase() || null,
       activeWindowMs: cfg.activeWindowMs,
     });
+
+// Private URLs of the other services, used only for health checks from this container.
+const systemEnv = cfg.dummy ? DUMMY_ENV : {
+  AGENTMEMORY_URL: process.env.AGENTMEMORY_URL,
+  AGENTMEMORY_SECRET: process.env.AGENTMEMORY_SECRET,
+  RUNNER_URL: process.env.RUNNER_URL || "http://agent-runner.railway.internal:8080",
+  NOTIFIER_URL: process.env.NOTIFIER_URL || "http://notifier.railway.internal:8080",
+  VIEWER_URL: process.env.VIEWER_URL || "http://agentmemory-viewer-caddy.railway.internal:80",
+};
+const system = new SystemMonitor({ manifests: loadManifests(path.join(HERE, "system")), env: systemEnv, ...(cfg.dummy ? { fetchImpl: makeDummyFetch() } : {}) });
 
 let graph = null;
 let loadError = null;
@@ -58,6 +71,7 @@ function broadcast(event, data) {
 async function pollOnce() {
   try {
     const { changed, newObs } = await source.poll();
+    if (newObs.length) { system.noteTraffic("claude-code", "agentmemory"); system.noteTraffic("galaxy", "agentmemory"); }
     if (!changed) return;
     const before = graph ? graph.nodes.length : 0;
     rebuild();
@@ -102,7 +116,9 @@ const server = http.createServer((req, res) => {
   if (p === BASE) { res.writeHead(302, { Location: `${BASE}/` }).end(); return; }
   if (!p.startsWith(`${BASE}/`)) { res.writeHead(404).end("not found"); return; }
   const rel = p.slice(BASE.length + 1);
+  system.noteTraffic("viewer-proxy", "galaxy"); // every request here came through the proxy
 
+  if (rel === "api/system") return json(res, 200, system.snapshot());
   if (rel === "api/graph") return graph ? json(res, 200, graph) : json(res, 503, { error: loadError || "loading" });
   if (rel === "api/events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
@@ -123,6 +139,12 @@ server.listen(cfg.port, "0.0.0.0", () => console.log(`[galaxy] listening on :${c
     rebuild();
     console.log("[galaxy] loaded", graph.stats);
     setInterval(pollOnce, cfg.pollMs);
+    const probeSystem = async () => {
+      try { await system.probe(); broadcast("system", system.snapshot()); }
+      catch (err) { console.error("[galaxy] system probe failed:", err.message); }
+    };
+    probeSystem();
+    setInterval(probeSystem, Number(process.env.SYSTEM_POLL_MS || 10000));
   } catch (err) {
     loadError = err.message;
     console.error("[galaxy] initial load failed:", err.message);
