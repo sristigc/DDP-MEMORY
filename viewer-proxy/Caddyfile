@@ -10,6 +10,11 @@
 		}
 	}
 
+	# DDP-AGENT jobs API (list jobs, resume after the local log check).
+	handle /agent/* {
+		reverse_proxy {$RUNNER_URL:http://agent-runner.railway.internal:8080}
+	}
+
 	handle {
 		reverse_proxy {$UPSTREAM_URL} {
 			# The viewer only accepts Host headers it trusts (loopback on its own port),

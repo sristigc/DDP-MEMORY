@@ -1,0 +1,17 @@
+{
+  "name": "ddp-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DDP-AGENT: Jira poller, agent runner and notifier sharing one job store",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "poller": "node jira-poller/index.mjs",
+    "runner": "node agent-runner/index.mjs",
+    "notifier": "node notifier/index.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pg": "8.23.0"
+  }
+}

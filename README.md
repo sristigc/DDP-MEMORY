@@ -28,6 +28,7 @@ starts with the history instead of from zero.
 | `.gitattributes` | Forces LF line endings on `.sh` / `Dockerfile` (CRLF breaks bash in the container). |
 | `.gitignore` | Keeps exports, payloads, and `.env` files out of git. |
 | `viewer-proxy/` | Password-protected Caddy proxy for the dashboard (replaces `XavTo/caddy-zero-trust`). Deployed as a second Railway service with Root Directory `viewer-proxy`. |
+| `agent/` | **DDP-AGENT** — jira-poller, agent-runner, notifier + shared job store library (section 8). |
 | `galaxy/` | **DDP Galaxy** — live 3D/2D constellation graph (clusters per person, highlighted shared context). Node service, no npm deps. Served at `/galaxy` behind the dashboard login. |
 | `hooks/session-owner.mjs` | Claude Code SessionStart hook: records which person owns each session. |
 | `tools/tag-sessions.mjs` | Tags backfilled sessions with their owner. |
@@ -249,7 +250,7 @@ node tools/tag-sessions.mjs exports/redacted.export.json
   - *Display* — node size, link thickness/opacity, labels (people / + tickets / none), optional person globes, glow.
   - *Forces* — center, repel, link force, link distance, group pull, re-settle.
 - **Theme**: black background (#000), soft-black panels, greyscale, matte (Space Grotesk + Inter). Threads are grey and white — work threads dark grey, person↔DDP mid grey, shared-context threads near white; **only live threads (and DDP) glow** — the glow threshold is set so nothing else crosses it.
-- **Magnetic globes** (on by default): a wireframe globe plus faint dipole field loops around each person, following them as the layout moves; pulses while that person is live.
+- **Person globes** (on by default): a small, faint wireframe globe around each person, following them as the layout moves; pulses while that person is live.
 - **Zoom**: wheel zooms toward the mouse pointer (down to a single file); **+ / − / FIT** buttons, or keys `+`, `-`, `f`.
 - **Live**: every ~5s the server checks agentmemory. While someone works, their globe pulses, their
   DDP thread brightens, and the session → file/ticket threads they touch **light up** (bright
@@ -311,10 +312,66 @@ refreshes on file change; use the Galaxy for true 3D and live pulses.
 
 ---
 
+## 8. DDP-AGENT (Phase 1 automation)
+
+Runs the Phase 1 flow (Jira ticket → context → dev subtask → logs → pull → build → commit → push →
+PR → review) as four services in their own Railway group. Agents, commands and skills stay as
+versioned `.md` files that the runner loads; they are configuration, not services.
+
+```
+┌─ DDP-AGENT ─────────────────────────────────────────────────────────────┐
+│ jira-poller   cron 0 */5 * * *  fetch tickets assigned to me → queue    │
+│ job-store     Postgres: jobs + job_events (one open job per ticket)     │
+│ agent-runner  worker: claims jobs, runs steps 1–9, /agent/* API         │
+│ notifier      POST /notify → my Google Chat (private network, token)    │
+└─────────────────────────────────────────────────────────────────────────┘
+agent-runner → agentmemory (recall in step 1, saves outcomes) → shows on the Graph
+```
+
+- **Step 3 (logs) runs locally**: QA/UAT servers are on 172.31.x.x, which Railway cannot reach. The
+  runner pauses the job as `awaiting_local` and messages Google Chat. After checking logs from the
+  office network, resume it: `POST https://<dashboard>/agent/jobs/<id>/resume {"note":"what the logs showed"}`
+  (dashboard login). `GET /agent/jobs` lists jobs, `GET /agent/jobs/<id>` shows one with its step events.
+- **Dry-run first**: `AGENT_MODE=dry-run` (default) records what each step would do, recalls past
+  context from agentmemory, notifies and saves outcomes, without touching Jira or git. `live` fails
+  loudly until the Claude Agent SDK executor and credentials are added.
+- **RL (reinforcement learning)** is on hold; it will read outcomes from `job_events`.
+
+### Code layout (`agent/`: one package, one image per service)
+| Path | Role |
+|---|---|
+| `shared/config.mjs`, `shared/log.mjs` | env helpers; JSON logs with credential fields masked |
+| `shared/store/` | job store contract; `postgres.mjs` (FOR UPDATE SKIP LOCKED queue), `memory.mjs` (tests/local), `schema.sql` |
+| `shared/clients.mjs` | notifier + agentmemory clients (best-effort, with timeouts) |
+| `jira-poller/` | `jira.mjs` (Jira Cloud search, paginated), `poll.mjs`, `main.mjs` |
+| `agent-runner/` | `pipeline.mjs` (steps as data), `executors.mjs` (dry-run / live), `worker.mjs`, `api.mjs`, `main.mjs` |
+| `notifier/` | `gchat.mjs` (Google Chat webhook), `server.mjs`, `main.mjs` |
+| `test/agent.test.mjs` | store, poller, pipeline, worker, API, notifier, logger (`cd agent && npm test`) |
+
+### Railway setup
+Each code service: **Root Directory** `/agent`, **Dockerfile path** `<service>/Dockerfile`, **Watch paths**
+`/agent/shared/**`, `/agent/package*.json`, `/agent/<service>/**`.
+
+| Service | Variables |
+|---|---|
+| `job-store` | Railway Postgres (provides `DATABASE_URL`) |
+| `jira-poller` | `DATABASE_URL`, `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, optional `JIRA_JQL`, `NOTIFIER_URL`, `NOTIFIER_TOKEN`; **Cron** `0 */5 * * *` |
+| `agent-runner` | `DATABASE_URL`, `AGENT_MODE=dry-run`, `AGENTMEMORY_URL=http://agentmemory.railway.internal:8080`, `AGENTMEMORY_SECRET=${{agentmemory.AGENTMEMORY_SECRET}}`, `NOTIFIER_URL=http://notifier.railway.internal:8080`, `NOTIFIER_TOKEN`, `PORT=8080` |
+| `notifier` | `NOTIFIER_TOKEN` (random), `GCHAT_WEBHOOK_URL` (your personal Google Chat space webhook), `PORT=8080` |
+
+Without Jira credentials the poller logs a warning and exits; without a webhook the notifier logs
+messages instead of sending them, so the services can be deployed before the secrets are ready.
+
+---
+
 ## Changelog
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | Person globes smaller (radius 16 + 3·√items) and fainter (opacity 0.025). |
+| 2026-09-24 | **DDP-AGENT** (`agent/`): jira-poller (5-hourly cron), agent-runner (dry-run pipeline of the 9 Phase 1 steps, local hand-off for logs, resume API), notifier (Google Chat), Postgres job store; shared library; 10 tests. viewer-proxy routes `/agent/*` to the runner. |
+| 2026-09-24 | Person ↔ work threads restored: the model adds direct `works` links (person → ticket/service/file, sessions collapsed) shown whenever sessions are hidden, so shared items visibly connect to every owner. Brighter threads (works #8e8e96, DDP #a6a6ac, shared #e6e6ea, opacity 0.5). |
+| 2026-09-24 | Removed the magnetic field loops; person globes are the wireframe sphere only. |
 | 2026-09-24 | Background set to pure black (#000); panels unchanged. |
 | 2026-09-24 | Review: restored the earlier soft-black theme (#0a0a0c, original panels) and grey/white threads (work #4a4a50, DDP #8a8a90, shared #cfcfd4, opacity 0.4); live threads still glow white. |
 | 2026-09-24 | Back to black (review): pure black background and panels; Role colours now greyscale (white / light grey / dark grey / mid-grey for shared); no rings. |
