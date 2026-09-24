@@ -149,7 +149,8 @@ Only the DDP project folder is imported — never the whole `~/.claude` director
 1. Check the new release notes at [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory).
 2. Edit `Dockerfile`: `ARG AGENTMEMORY_VERSION=<new>` (and `III_VERSION` if the release requires it).
 3. Confirm the new package still ships `dist/iii-config.docker.yaml` with `port: 3111`
-   (`start.sh` depends on it).
+   (`start.sh` depends on it), and that the engine/stream ports in that config still match
+   `III_ENGINE_PORT` (49134) / `III_STREAM_PORT` (3112) set in `start.sh`.
 4. Commit to `main` → Railway redeploys → run the health check.
 5. Update the version in this README and in the changelog below.
 6. Team members should use the same client version (`@agentmemory/mcp`) — exports from a newer
@@ -161,4 +162,5 @@ Only the DDP project folder is imported — never the whole `~/.claude` director
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | Fix 404 after upgrade: 0.9.29 derives engine/stream ports from `--port` (8080 → engine 54103, streams 8081) but the iii docker config listens on 49134 / 3112, so the worker never connected. `start.sh` now pins `III_ENGINE_PORT=49134` and `III_STREAM_PORT=3112` (override via Railway variables). |
 | 2026-09-24 | Own repo created from XavTo template. Pinned agentmemory **0.9.16 → 0.9.29** (server was rejecting 0.9.29 exports). Added `.gitattributes` (LF), secret-required startup check, optional `GRAPH_EXTRACTION_ENABLED` / `ANTHROPIC_API_KEY` / `EMBEDDING_PROVIDER` / `AGENTMEMORY_AGENT_SCOPE` passthrough, and `tools/` backfill + redaction scripts. |

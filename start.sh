@@ -105,5 +105,12 @@ export VIEWER_INTERNAL_PORT="${VIEWER_INTERNAL_PORT:-8082}"
 echo "[railway] Viewer proxy 0.0.0.0:${VIEWER_PUBLIC_PORT} -> 127.0.0.1:${VIEWER_INTERNAL_PORT}"
 socat TCP-LISTEN:${VIEWER_PUBLIC_PORT},bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:${VIEWER_INTERNAL_PORT} &
 
+# agentmemory >= 0.9.2x derives the engine port (PORT+46023) and stream port (PORT+1)
+# from --port, but the docker iii-config keeps the engine on 49134 and streams on 3112.
+# Pin them explicitly so the worker can reach the engine; otherwise REST never registers (404).
+export III_ENGINE_PORT="${III_ENGINE_PORT:-49134}"
+export III_STREAM_PORT="${III_STREAM_PORT:-3112}"
+echo "[railway] III_ENGINE_PORT=${III_ENGINE_PORT} III_STREAM_PORT=${III_STREAM_PORT}"
+
 echo "[railway] Launching agentmemory..."
 exec agentmemory --port "${PORT}" --verbose
