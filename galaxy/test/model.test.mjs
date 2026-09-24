@@ -52,6 +52,14 @@ test("DDP hub links every person", () => {
   assert.deepEqual(g.links.filter((l) => l.type === "member").map((l) => l.source).sort(), ["p:a@x.com", "p:b@x.com"]);
 });
 
+test("each person gets direct 'works' threads to their items, one per owner for shared items", () => {
+  const f = "C:\\DDP\\novopay-platform-actor\\X.java";
+  const obsBySession = new Map([["s1", [{ id: "o1", type: "file_edit", files: [f] }]], ["s2", [{ id: "o2", type: "file_read", files: [f] }]]]);
+  const g = buildGraph({ sessions: [{ id: "s1" }, { id: "s2" }], obsBySession, ownerOf: new Map([["s1", "a@x.com"], ["s2", "b@x.com"]]), ticketPrefixes: PREFIXES });
+  const works = g.links.filter((l) => l.type === "works" && l.target === "f:novopay-platform-actor/X.java");
+  assert.deepEqual(works.map((l) => l.source).sort(), ["p:a@x.com", "p:b@x.com"]);
+});
+
 test("sessions without an owner go to the unassigned globe", () => {
   const g = buildGraph({ sessions: [{ id: "s1", cwd: "" }], obsBySession: new Map(), ownerOf: new Map(), ticketPrefixes: PREFIXES });
   assert.ok(g.nodes.some((n) => n.id === `p:${UNKNOWN_PERSON}`));

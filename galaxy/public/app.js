@@ -7,7 +7,7 @@ import { forceX, forceY, forceZ } from "https://esm.sh/d3-force-3d@3.0.6";
 
 // Dark, restrained palette. Only pure white is bright enough to trip the glow (bloom threshold),
 // so just the DDP parent and live threads/nodes glow; everything else stays matte.
-const C = { bg: "#000000", ivory: "#d4d4d8", muted: "#6b6b70", gold: "#ffffff", live: "#ffffff", link: "#4a4a50", session: "#55555c" };
+const C = { bg: "#000000", ivory: "#d4d4d8", muted: "#6b6b70", gold: "#ffffff", live: "#ffffff", link: "#6a6a72", session: "#55555c" };
 // "Role" colouring (default), all greyscale: parent white, people light grey, own work dark grey,
 // shared context a lighter mid-grey. Only the parent is pure white, so only it (and live threads) glow.
 const ROLE = { project: "#ffffff", person: "#d0d0d4", own: "#6e6e74", shared: "#b4b4ba", session: "#4a4a50" };
@@ -21,7 +21,7 @@ const $ = (id) => document.getElementById(id);
 
 const ui = {
   dims: 3, colorBy: "role", labels: "people", globes: true, bloom: true,
-  nodeSize: 1, linkWidth: 0, linkOpacity: 0.4,
+  nodeSize: 1, linkWidth: 0, linkOpacity: 0.5,
   center: 0.008, repel: 90, linkForce: 0.06, linkDist: 90, groupPull: 0.04,
   filters: { ticket: true, service: true, file: true, session: false }, sharedOnly: false, query: "",
 };
@@ -102,7 +102,7 @@ function applyForces(reheat = true) {
   Graph.d3Force("charge").strength((n) => -ui.repel * (n.type === "project" ? 20 : n.type === "person" ? 14 : 1)).distanceMax(2500);
   Graph.d3Force("link")
     .strength((l) => (l.type === "shared" ? 0 : l.type === "member" ? 0.02 : ui.linkForce))
-    .distance((l) => (l.type === "member" ? 600 : l.type === "owns" ? ui.linkDist * 1.5 : ui.linkDist));
+    .distance((l) => (l.type === "member" ? 600 : l.type === "owns" || l.type === "works" ? ui.linkDist * 1.5 : ui.linkDist));
   Graph.d3Force("x", forceX(0).strength(ui.center));
   Graph.d3Force("y", forceY(0).strength(ui.center));
   Graph.d3Force("z", ui.dims === 3 ? forceZ(0).strength(ui.center) : null);
@@ -156,7 +156,7 @@ function applyStyles(rebuildLabels = false) {
     .linkOpacity(ui.linkOpacity)
     // Grey-and-white threads: work threads dark grey, person↔DDP mid grey, shared-context threads near white;
     // live threads get their own bright material (full opacity) and glow.
-    .linkColor((l) => (l.type === "shared" ? "#cfcfd4" : l.type === "member" ? "#8a8a90" : C.link))
+    .linkColor((l) => (l.type === "shared" ? "#e6e6ea" : l.type === "member" ? "#a6a6ac" : l.type === "works" ? "#8e8e96" : C.link))
     .linkMaterial((l) => (linkLive(l) ? LIVE_THREAD : null))
     .linkWidth((l) => (linkLive(l) ? Math.max(ui.linkWidth, 0.7) : ui.linkWidth))
     .linkDirectionalParticles(0);
@@ -175,7 +175,12 @@ function isVisible(n) {
   }
   return true;
 }
-function linkVisible(l) { const [s, t] = ends(l); return isVisible(state.byId.get(s)) && isVisible(state.byId.get(t)); }
+// Person -> work threads: direct "works" links when sessions are hidden, the session path when shown.
+function linkVisible(l) {
+  if (l.type === "works" && ui.filters.session) return false;
+  const [s, t] = ends(l);
+  return isVisible(state.byId.get(s)) && isVisible(state.byId.get(t));
+}
 
 async function loadGraph(keepPositions) {
   const res = await fetch("api/graph", { cache: "no-store" });
@@ -217,34 +222,14 @@ function drawGlobes() {
   const counts = new Map();
   for (const n of state.data.nodes) if (n.owners?.length === 1 && !["person", "project"].includes(n.type)) counts.set(n.owners[0], (counts.get(n.owners[0]) || 0) + 1);
   for (const p of state.people.values()) {
-    const r = 30 + Math.sqrt(counts.get(p.person) || 1) * 6;
+    const r = 16 + Math.sqrt(counts.get(p.person) || 1) * 3; // compact: hugs the person, not their whole cluster
     const g = new THREE.Group();
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({ color: groupColor(p), wireframe: true, transparent: true, opacity: 0.06, depthWrite: false }));
-    const field = new THREE.LineSegments(fieldLines(r), new THREE.LineBasicMaterial({ color: groupColor(p), transparent: true, opacity: 0.07, depthWrite: false }));
-    g.add(shell, field);
-    g.userData = { person: p.person, shell, field };
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshBasicMaterial({ color: groupColor(p), wireframe: true, transparent: true, opacity: 0.025, depthWrite: false }));
+    g.add(shell);
+    g.userData = { person: p.person, shell };
     scene.add(g);
     state.globes.set(p.person, g);
   }
-}
-
-// Dipole "magnetic field" loops around a globe: r = L·sin²θ, swept around the vertical axis.
-function fieldLines(radius) {
-  const pts = [];
-  for (const L of [1.35, 1.8]) {
-    for (let k = 0; k < 8; k++) {
-      const phi = (k / 8) * Math.PI * 2;
-      let prev = null;
-      for (let i = 0; i <= 48; i++) {
-        const th = (i / 48) * Math.PI;
-        const rr = radius * L * Math.sin(th) ** 2;
-        const v = new THREE.Vector3(rr * Math.sin(th) * Math.cos(phi), rr * Math.cos(th), rr * Math.sin(th) * Math.sin(phi));
-        if (prev) pts.push(prev, v);
-        prev = v;
-      }
-    }
-  }
-  return new THREE.BufferGeometry().setFromPoints(pts);
 }
 
 // ---------- panel ----------
@@ -418,12 +403,10 @@ function animate() {
   for (const [person, g] of state.globes) {
     const p = state.byId.get(`p:${person}`);
     if (p?.x !== undefined) g.position.set(p.x, p.y, p.z || 0);
-    const { shell, field } = g.userData;
+    const { shell } = g.userData;
     const col = p?.active ? C.live : groupColor(p || {});
-    shell.material.opacity = 0.06 + (p?.active ? 0.04 + 0.03 * Math.sin(now / 420) : 0);
-    field.material.opacity = 0.07 + (p?.active ? 0.05 + 0.04 * Math.sin(now / 420) : 0);
+    shell.material.opacity = 0.025 + (p?.active ? 0.02 + 0.015 * Math.sin(now / 420) : 0);
     shell.material.color.set(col);
-    field.material.color.set(col);
     g.rotation.y += 0.0006;
   }
   requestAnimationFrame(animate);

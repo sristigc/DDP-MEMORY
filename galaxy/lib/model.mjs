@@ -138,6 +138,19 @@ function finish(nodes, links, people) {
     }
   }
 
+  // Direct person -> work threads (sessions collapsed), so a person stays visibly connected to their
+  // tickets/services/files even when session nodes are hidden. Shared items get one thread per owner.
+  const works = new Map();
+  for (const l of links.values()) {
+    if (!l.source.startsWith("x:") || !nodes.has(l.target)) continue;
+    const person = nodes.get(l.source)?.person;
+    if (!person) continue;
+    const key = `p:${person}|${l.target}`;
+    const w = works.get(key) || { source: `p:${person}`, target: l.target, type: "works", weight: 0 };
+    w.weight += l.weight;
+    works.set(key, w);
+  }
+
   // Parent project hub: every person's globe hangs off it.
   const everyone = personList.map((p) => p.person);
   const hub = { id: HUB_ID, type: "project", name: "DDP", owners: everyone, shared: everyone.length > 1, weight: personList.reduce((a, p) => a + p.sessions, 0) };
@@ -148,7 +161,7 @@ function finish(nodes, links, people) {
     ...personList.map((p) => ({ id: p.id, type: "person", name: p.name, person: p.person, owners: [p.person], color: p.color, sessions: p.sessions, active: p.active, weight: p.sessions })),
     ...[...nodes.values()].map((n) => ({ ...n, owners: [...n.owners], shared: n.owners.size > 1 })),
   ];
-  const outLinks = [...members, ...links.values(), ...shared.values()];
+  const outLinks = [...members, ...links.values(), ...works.values(), ...shared.values()];
   const stats = {
     people: personList.length,
     sessions: outNodes.filter((n) => n.type === "session").length,
