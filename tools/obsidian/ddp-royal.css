@@ -1,0 +1,29 @@
+/* DDP Galaxy — monochrome theme for Obsidian (black, greys, white; Space Grotesk + Inter).
+   Install: obsidian-sync copies this to <vault>/.obsidian/snippets/ddp-royal.css;
+   enable it under Settings → Appearance → CSS snippets → "ddp-royal". */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap");
+
+.theme-dark {
+  --background-primary: #0a0a0c;
+  --background-secondary: #111114;
+  --text-normal: #e6e6e6;
+  --text-muted: #8a8a90;
+  --text-accent: #ffffff;
+  --interactive-accent: #bdbdc1;
+  --font-text-theme: "Inter", "Segoe UI", sans-serif;
+  --font-interface-theme: "Inter", "Segoe UI", sans-serif;
+  --h1-font: "Space Grotesk", sans-serif;
+  --h2-font: "Space Grotesk", sans-serif;
+
+  /* Graph view */
+  --graph-line: #3a3a40;
+  --graph-node: #a9a9ae;
+  --graph-node-unresolved: #4a4a50;
+  --graph-node-focused: #ffffff;
+  --graph-node-tag: #6b6b70;
+  --graph-node-attachment: #55555c;
+  --graph-text: #e6e6e6;
+}
+
+.theme-dark .markdown-rendered h1,
+.theme-dark .markdown-rendered h2 { letter-spacing: .12em; color: #ffffff; }
