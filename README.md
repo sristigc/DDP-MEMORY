@@ -27,6 +27,7 @@ starts with the history instead of from zero.
 | `start.sh` | Railway entrypoint: binds to Railway's `PORT`, writes config/env, refuses to start without `AGENTMEMORY_SECRET`. |
 | `.gitattributes` | Forces LF line endings on `.sh` / `Dockerfile` (CRLF breaks bash in the container). |
 | `.gitignore` | Keeps exports, payloads, and `.env` files out of git. |
+| `viewer-proxy/` | Password-protected Caddy proxy for the dashboard (replaces `XavTo/caddy-zero-trust`). Deployed as a second Railway service with Root Directory `viewer-proxy`. |
 | `tools/backfill.sh` | Imports old local Claude Code sessions → redacts → scans → uploads. |
 | `tools/redact.mjs` | Masks passwords, keys, tokens, URL credentials, JWTs, PEM keys, and internal IPs in an export. |
 | `tools/scan.mjs` | Independent re-scan; fails if anything sensitive remains. |
@@ -75,6 +76,44 @@ curl -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   https://agentmemory-production-a279.up.railway.app/agentmemory/health
 ```
 Expect `"status":"healthy"` and `"version":"0.9.29"`.
+
+### Watch paths (avoid needless restarts)
+Every push redeploys a service unless watch paths are set. In Railway → service → **Settings → Build → Watch Paths**:
+- `agentmemory`: `/Dockerfile`, `/start.sh`
+- `agentmemory viewer caddy`: `/viewer-proxy/**`
+
+---
+
+## 1b. Dashboard (viewer)
+
+URL: `https://agentmemory-viewer-caddy-production-ecfa.up.railway.app` — login from the viewer
+service's `AUTH_USER` / `AUTH_PASS` variables (share privately).
+
+```
+Browser ─HTTPS─▶ viewer-proxy (Caddy, basic auth, :80)
+                   └─▶ agentmemory.railway.internal:8083 (socat) ─▶ viewer 127.0.0.1:8082
+                                                                   └─▶ REST API (adds the secret)
+```
+
+### Switch the viewer service to this repo
+1. Railway → **agentmemory viewer caddy → Settings → Source Repo** → **Disconnect**
+   (`XavTo/caddy-zero-trust`) → **Connect Repo** → `sristigc/DDP-MEMORY`, branch `main`.
+2. **Settings → Source → Add Root Directory** → `viewer-proxy`.
+3. Variables (keep the existing ones):
+
+| Variable | Value |
+|---|---|
+| `AUTH_USER` | dashboard username |
+| `AUTH_PASS` | dashboard password (plain; hashed with bcrypt at boot) |
+| `UPSTREAM_URL` | `http://agentmemory.railway.internal:8083` |
+| `VIEWER_HOST_HEADER` | optional, default `localhost:8082` (the viewer's internal port) |
+
+4. Public domain stays on port **80**.
+
+### "forbidden host"
+The agentmemory viewer rejects any `Host` header except loopback on its own port. The proxy
+rewrites `Host` to `localhost:8082` (`VIEWER_HOST_HEADER`). If the viewer port ever changes
+(it is REST `PORT` + 2), update that variable.
 
 ---
 
@@ -162,6 +201,7 @@ Only the DDP project folder is imported — never the whole `~/.claude` director
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | Added `viewer-proxy/` (own Caddy basic-auth proxy, replaces `XavTo/caddy-zero-trust`). Fixes dashboard "forbidden host" by rewriting `Host` to `localhost:8082`. Password hashed with `caddy hash-password` instead of interpolating it into Python. Documented watch paths. |
 | 2026-09-24 | Redaction/scan handle JSON-escaped quotes (`password=\"…\"`): redactor now masks unknown values in that form; scanner no longer flags already-redacted values or code (`$env:SSH_ASKPASS = Join-Path …`, `sshpass: command not found`). Found during the first full DDP dry run (64 sessions, 45 false positives, 0 real leaks). |
 | 2026-09-24 | Fix 404 after upgrade: 0.9.29 derives engine/stream ports from `--port` (8080 → engine 54103, streams 8081) but the iii docker config listens on 49134 / 3112, so the worker never connected. `start.sh` now pins `III_ENGINE_PORT=49134` and `III_STREAM_PORT=3112` (override via Railway variables). |
 | 2026-09-24 | Own repo created from XavTo template. Pinned agentmemory **0.9.16 → 0.9.29** (server was rejecting 0.9.29 exports). Added `.gitattributes` (LF), secret-required startup check, optional `GRAPH_EXTRACTION_ENABLED` / `ANTHROPIC_API_KEY` / `EMBEDDING_PROVIDER` / `AGENTMEMORY_AGENT_SCOPE` passthrough, and `tools/` backfill + redaction scripts. |

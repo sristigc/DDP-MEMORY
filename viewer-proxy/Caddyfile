@@ -1,0 +1,11 @@
+:80 {
+	basic_auth /* {
+		{$AUTH_USER} {$AUTH_PASS_HASH}
+	}
+
+	reverse_proxy {$UPSTREAM_URL} {
+		# The viewer only accepts Host headers it trusts (loopback on its own port),
+		# otherwise it answers 403 "forbidden host". Rewrite to that value.
+		header_up Host {$VIEWER_HOST_HEADER:localhost:8082}
+	}
+}
