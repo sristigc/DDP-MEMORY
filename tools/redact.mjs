@@ -31,9 +31,10 @@ const knownList = [...known].sort((a, b) => b.length - a.length);
 // 2. Generic patterns (keep the label, mask the value).
 const RULES = [
   ["pem", /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, R],
-  ["password", /((?:password|passwd|pwd|PGPASSWORD|MYSQL_PWD)["']?\s*[:=]\s*["']?)[^\s"',;)}·|]{3,}/gi, `$1${R}`],
+  // ["'\\]* also covers escaped quotes (password=\"x\") found in JSON-in-string tool output.
+  ["password", /((?:password|passwd|pwd|PGPASSWORD|MYSQL_PWD)["'\\]*\s*[:=]\s*["'\\]*)(?!\*\*\*REDACTED)[^\s"'\\,;)}·|]{3,}/gi, `$1${R}`],
   ["cli-pass", /(\s-p)(?!\s)[^\s"']{3,}/g, `$1${R}`],
-  ["secret", /((?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)["']?\s*[:=]\s*["']?)[A-Za-z0-9._\-+/=]{8,}/gi, `$1${R}`],
+  ["secret", /((?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)["'\\]*\s*[:=]\s*["'\\]*)(?!\*\*\*REDACTED)[A-Za-z0-9._\-+/=]{8,}/gi, `$1${R}`],
   ["bearer", /(bearer\s+)[A-Za-z0-9._\-+/=]{16,}/gi, `$1${R}`],
   ["url-creds", /(:\/\/[^\s:/@"']+:)[^\s@"']+(@)/g, `$1${R}$2`],
   ["aws", /AKIA[0-9A-Z]{16}/g, R],

@@ -33,10 +33,10 @@ curl -sf -m 120 "$LOCAL/agentmemory/export" -o "$OUT/raw.export.json"
 
 echo "== 3. Redact"
 node "$HERE/redact.mjs" "$OUT/raw.export.json" "$OUT/redacted.export.json"
+rm -f "$OUT/raw.export.json"   # unredacted copy is never kept, even if the scan fails
 
 echo "== 4. Scan"
 node "$HERE/scan.mjs" "$OUT/redacted.export.json"
-rm -f "$OUT/raw.export.json"   # unredacted copy is never kept
 
 if [ "$UPLOAD" != "--upload" ]; then
   echo "Dry run done. Review exports/redacted.export.json, then re-run with --upload."

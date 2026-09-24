@@ -162,5 +162,6 @@ Only the DDP project folder is imported — never the whole `~/.claude` director
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | Redaction/scan handle JSON-escaped quotes (`password=\"…\"`): redactor now masks unknown values in that form; scanner no longer flags already-redacted values or code (`$env:SSH_ASKPASS = Join-Path …`, `sshpass: command not found`). Found during the first full DDP dry run (64 sessions, 45 false positives, 0 real leaks). |
 | 2026-09-24 | Fix 404 after upgrade: 0.9.29 derives engine/stream ports from `--port` (8080 → engine 54103, streams 8081) but the iii docker config listens on 49134 / 3112, so the worker never connected. `start.sh` now pins `III_ENGINE_PORT=49134` and `III_STREAM_PORT=3112` (override via Railway variables). |
 | 2026-09-24 | Own repo created from XavTo template. Pinned agentmemory **0.9.16 → 0.9.29** (server was rejecting 0.9.29 exports). Added `.gitattributes` (LF), secret-required startup check, optional `GRAPH_EXTRACTION_ENABLED` / `ANTHROPIC_API_KEY` / `EMBEDDING_PROVIDER` / `AGENTMEMORY_AGENT_SCOPE` passthrough, and `tools/` backfill + redaction scripts. |

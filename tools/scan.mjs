@@ -3,7 +3,9 @@ import fs from "node:fs";
 
 const t = fs.readFileSync(process.argv[2], "utf8");
 const PATS = {
-  password: /pass(word|wd)?["']?\s*[:=]\s*["']?(?!\*\*\*REDACTED)[^\s"',]{3,}/gi,
+  // Quotes may be JSON-escaped (\" or \\\") in exports. Skips askpass/sshpass helpers and
+  // shell/PowerShell variable or cmdlet values ($var, Join-Path), which are code, not secrets.
+  password: /(?<!ssh|ask)pass(word|wd)?["'\\]*\s*[:=]\s*["'\\]*(?!\*\*\*REDACTED|\$|Join-Path)[^\s"'\\,]{3,}/gi,
   apiKey: /api[_-]?key["']?\s*[:=]\s*["']?(?!\*\*\*REDACTED)[A-Za-z0-9+/=_-]{12,}/gi,
   bearer: /bearer\s+(?!\*\*\*REDACTED)[A-Za-z0-9._\-+/=]{16,}/gi,
   secretVar: /(secret|token)["']?\s*[:=]\s*["']?(?!\*\*\*REDACTED)[A-Za-z0-9._\-+/=]{12,}/gi,
