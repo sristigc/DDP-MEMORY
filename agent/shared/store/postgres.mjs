@@ -91,9 +91,9 @@ export class PostgresStore {
   /** EMA update: weight += alpha * (reward - weight); evidence counts observations. */
   async reinforceLesson({ scope, kind, text, reward, alpha = 0.3 }) {
     const res = await this.pool.query(
-      `INSERT INTO lessons (scope, kind, text, weight, evidence) VALUES ($1, $2, $3, $4 * $5, 1)
+      `INSERT INTO lessons (scope, kind, text, weight, evidence) VALUES ($1, $2, $3, $4::real * $5::real, 1)
        ON CONFLICT (scope, kind, text) DO UPDATE
-         SET weight = lessons.weight + $5 * ($4 - lessons.weight), evidence = lessons.evidence + 1, updated_at = now()
+         SET weight = lessons.weight + $5::real * ($4::real - lessons.weight), evidence = lessons.evidence + 1, updated_at = now()
        RETURNING *`,
       [scope, kind, text, reward, alpha],
     );
