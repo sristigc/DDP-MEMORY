@@ -441,6 +441,7 @@ Step 3 (logs) remains local because QA/UAT servers are on the office network.
 
 | Date | Change |
 |---|---|
+| 2026-09-27 | Fix: learner saved the episode before its lessons, so a crash mid-pass left the outcome marked as learned with no lesson. Lessons are now written first and the episode last; outcome signature is versioned (`SIGNATURE_VERSION`) so rule changes re-learn past episodes once. +1 test. |
 | 2026-09-27 | Fix: lesson weight SQL failed on Railway Postgres ("operator is not unique: unknown * unknown"); parameters now cast to `real`. Found by the first live learner run. |
 | 2026-09-27 | **Learning loop**: `learner` cron service (every 2h) scores jobs from Jira outcomes (done +1, QA +0.5, reopened −1, failed −0.5, slow hand-off −0.1), reinforces lessons (EMA), publishes them to team memory; runner step 1 applies top lessons; poller requeues a finished ticket only when Jira changed after the job. New tables `episodes`, `lessons`; 6 new tests. Design note for Claude Code on Railway (not enabled). |
 | 2026-09-24 | DDP hub no longer drifts away from a small team: DDP ↔ person distance scales with team size (180 + 70 per extra person, was fixed 600), firmer pull (0.12, was 0.02), gentler hub repel (6×, was 20×), brighter DDP thread. |

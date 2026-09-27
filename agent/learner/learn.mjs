@@ -19,9 +19,6 @@ export async function learnOnce({ store, jira, memory, log, now = Date.now(), al
     const prev = await store.getEpisode(job.id);
     if (prev && prev.signals?.signature === sig) continue; // nothing new happened: no double counting
     const r = reward(s);
-    await store.recordEpisode({ jobId: job.id, jiraKey: job.jira_key, reward: r, signals: { ...s, signature: sig } });
-    changed++;
-
     for (const lesson of lessonsFor(job, s)) {
       const l = await store.reinforceLesson({ ...lesson, reward: r, alpha });
       touched.push(l);
@@ -29,6 +26,10 @@ export async function learnOnce({ store, jira, memory, log, now = Date.now(), al
         await memory.remember(`ddp-agent lesson [${l.scope}/${l.kind}] ${l.text}`, ["lesson", l.scope]);
       }
     }
+    // Episode last: if anything above fails, the episode is not marked as learned and is retried
+    // on the next pass instead of being skipped as "unchanged".
+    await store.recordEpisode({ jobId: job.id, jiraKey: job.jira_key, reward: r, signals: { ...s, signature: sig } });
+    changed++;
   }
   return { scored: jobs.length, changed, lessons: touched, errors };
 }

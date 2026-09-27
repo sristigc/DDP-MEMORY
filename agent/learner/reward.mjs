@@ -41,8 +41,10 @@ export function reward(s) {
 }
 
 /** Stable fingerprint: a job is only re-learned from when its observed outcome changes. */
+// Bump SIGNATURE_VERSION when scoring or lesson rules change, so past episodes are re-learned once.
+export const SIGNATURE_VERSION = 2;
 export function signature(s) {
-  return JSON.stringify([s.jobStatus, s.ticketStatus, s.reopened, s.reachedQA, s.reachedDone, s.waitHours > SLOW_HANDOFF_HOURS, s.localNote, s.error]);
+  return JSON.stringify([SIGNATURE_VERSION, s.jobStatus, s.ticketStatus, s.reopened, s.reachedQA, s.reachedDone, s.waitHours > SLOW_HANDOFF_HOURS, s.localNote, s.error]);
 }
 
 /** Lessons to reinforce with this episode's reward. Scopes: ticket, project, global. */

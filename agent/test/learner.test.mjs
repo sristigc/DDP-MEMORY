@@ -92,3 +92,19 @@ test("runner step 1 applies learned lessons for the ticket, project and global s
   assert.equal(out.data.lessonsApplied[0].scope, "DPB");
   assert.ok(out.data.lessonsApplied[0].weight < 0);
 });
+
+test("a crash while saving lessons leaves the episode unlearned, so the next pass retries it", async () => {
+  const store = new MemoryStore();
+  const { job: j } = await store.enqueue({ jiraKey: "HDP-9" });
+  await store.claim("w");
+  await store.finish(j.id, "succeeded", {});
+  const jira = { issueHistory: async () => ({ status: "Done", category: "done", transitions: [] }) };
+  const real = store.reinforceLesson.bind(store);
+  store.reinforceLesson = async () => { throw new Error("db down"); };
+  await assert.rejects(learnOnce({ store, jira, memory: fakeMemory(), log: quiet }));
+  assert.equal(await store.getEpisode(j.id), null, "not recorded after a failed lesson write");
+  store.reinforceLesson = real;
+  const retry = await learnOnce({ store, jira, memory: fakeMemory(), log: quiet });
+  assert.equal(retry.changed, 1);
+  assert.ok(retry.lessons.length >= 1);
+});
