@@ -17,8 +17,8 @@ async function main() {
   try {
     await store.migrate();
     const jira = new JiraClient({ baseUrl: requireEnv("JIRA_BASE_URL"), email: requireEnv("JIRA_EMAIL"), apiToken: requireEnv("JIRA_API_TOKEN") });
-    const { fetched, created } = await pollOnce({ jira, store, jql: env("JIRA_JQL", DEFAULT_JQL) });
-    log.info("poll complete", { fetched, queued: created.length, keys: created.map((j) => j.jira_key) });
+    const { fetched, created, unchanged } = await pollOnce({ jira, store, jql: env("JIRA_JQL", DEFAULT_JQL) });
+    log.info("poll complete", { fetched, queued: created.length, unchanged, keys: created.map((j) => j.jira_key) });
     if (created.length) {
       const notifier = new NotifierClient({ url: env("NOTIFIER_URL"), token: env("NOTIFIER_TOKEN"), log });
       await notifier.send({ kind: "queued", text: `Queued ${created.length} new ticket(s): ${created.map((j) => j.jira_key).join(", ")}` });

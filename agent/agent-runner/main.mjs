@@ -20,7 +20,7 @@ const store = await createStore(env("DATABASE_URL"));
 await store.migrate();
 const memory = new MemoryClient({ url: env("AGENTMEMORY_URL"), secret: env("AGENTMEMORY_SECRET"), log });
 const notifier = new NotifierClient({ url: env("NOTIFIER_URL"), token: env("NOTIFIER_TOKEN"), log });
-const executor = createExecutor({ mode, memory });
+const executor = createExecutor({ mode, memory, store });
 
 let stopping = false;
 async function loop() {

@@ -3,13 +3,19 @@
 
 export class DryRunExecutor {
   mode = "dry-run";
-  constructor({ memory }) { this.memory = memory; }
+  constructor({ memory, store }) { this.memory = memory; this.store = store; }
 
   async run(step, job) {
     const data = { drivers: step.drivers, mode: "dry-run" };
     if (step.memory === "recall") {
       const hits = await this.memory.recall(`${job.jira_key} ${job.summary}`.trim());
       data.pastContext = hits.length;
+      if (this.store?.topLessons) {
+        // Learned policy: the most-evidenced lessons for this ticket, its project and everything.
+        const scopes = [job.jira_key, String(job.jira_key).split("-")[0], "global"];
+        const lessons = await this.store.topLessons(scopes, 5);
+        data.lessonsApplied = lessons.map((l) => ({ scope: l.scope, kind: l.kind, weight: Number(l.weight.toFixed(2)), text: l.text.slice(0, 200) }));
+      }
     }
     return { type: "plan", message: `Would run step ${step.n} · ${step.name} with ${step.drivers.join(", ")}`, data };
   }
@@ -24,6 +30,6 @@ export class LiveExecutor {
   }
 }
 
-export function createExecutor({ mode, memory }) {
-  return mode === "live" ? new LiveExecutor() : new DryRunExecutor({ memory });
+export function createExecutor({ mode, memory, store }) {
+  return mode === "live" ? new LiveExecutor() : new DryRunExecutor({ memory, store });
 }

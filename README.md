@@ -28,7 +28,7 @@ starts with the history instead of from zero.
 | `.gitattributes` | Forces LF line endings on `.sh` / `Dockerfile` (CRLF breaks bash in the container). |
 | `.gitignore` | Keeps exports, payloads, and `.env` files out of git. |
 | `viewer-proxy/` | Password-protected Caddy proxy for the dashboard (replaces `XavTo/caddy-zero-trust`). Deployed as a second Railway service with Root Directory `viewer-proxy`. |
-| `agent/` | **DDP-AGENT** — jira-poller, agent-runner, notifier + shared job store library (section 8). |
+| `agent/` | **DDP-AGENT** — jira-poller, agent-runner, notifier, learner + shared job store library (sections 8–9). |
 | `galaxy/system/` | Service + group manifests (`.claude`-style `.md` files) that generate the System canvas (section 6b). |
 | `galaxy/` | **DDP Galaxy** — live 3D/2D constellation graph (clusters per person, highlighted shared context). Node service, no npm deps. Served at `/galaxy` behind the dashboard login. |
 | `hooks/session-owner.mjs` | Claude Code SessionStart hook: records which person owns each session. |
@@ -389,9 +389,51 @@ Each code service: **Root Directory** `/agent`, **Dockerfile path** `<service>/D
 | `jira-poller` | `DATABASE_URL`, `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, optional `JIRA_JQL`, `NOTIFIER_URL`, `NOTIFIER_TOKEN`; **Cron** `0 */5 * * *` |
 | `agent-runner` | `DATABASE_URL`, `AGENT_MODE=dry-run`, `AGENTMEMORY_URL=http://agentmemory.railway.internal:8080`, `AGENTMEMORY_SECRET=${{agentmemory.AGENTMEMORY_SECRET}}`, `NOTIFIER_URL=http://notifier.railway.internal:8080`, `NOTIFIER_TOKEN`, `PORT=8080` |
 | `notifier` | `NOTIFIER_TOKEN` (random), `GCHAT_WEBHOOK_URL` (your personal Google Chat space webhook), `PORT=8080` |
+| `learner` | `DATABASE_URL`, `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (references to jira-poller's), `AGENTMEMORY_URL`, `AGENTMEMORY_SECRET`, `NOTIFIER_URL`, `NOTIFIER_TOKEN`, optional `LEARNING_RATE` (0.3); **Cron** `30 */2 * * *` |
 
 Without Jira credentials the poller logs a warning and exits; without a webhook the notifier logs
 messages instead of sending them, so the services can be deployed before the secrets are ready.
+
+**Requeue rule:** a ticket whose last job finished is queued again only if Jira shows an update
+after that job ended (reopened, moved back, new activity). Unchanged tickets are skipped.
+
+---
+
+## 9. Learning loop (reinforcement-style)
+
+The agent's "policy" is the set of **lessons** it recalls; outcomes in Jira reinforce or weaken them.
+No model weights change — this is reinforcement from feedback on top of shared memory.
+
+```
+job finishes/pauses ─▶ learner (every 2h) ─▶ reward from Jira outcome ─▶ reinforce lessons
+        ▲                                                                   │
+        └──────── runner step 1 applies top lessons ◀── team memory ◀───────┘
+```
+
+| Signal (after the job started) | Reward |
+|---|---|
+| Ticket reaches Done / Closed | +1 |
+| Ticket reaches QA / UAT | +0.5 |
+| Ticket reopened or moved back | −1 |
+| Job failed | −0.5 |
+| Waited > 24h at the local log step | −0.1 |
+
+- **Episode** = one job; scored into `episodes` (reward + signals). An unchanged outcome is never
+  counted twice (signature check).
+- **Lessons** (`lessons` table), scoped to the ticket, its project (`DPB`, `HDP`, …) or `global`:
+  reopen warnings, what reached QA/Done, your resume notes (`/agent/jobs/<id>/resume {"note": …}`),
+  slow hand-offs, runner failures. Weight update: `w ← w + α·(reward − w)`, α = `LEARNING_RATE`.
+- New lessons are saved to team memory (`ddp-agent lesson [...]`) so people and Claude Code sessions
+  recall them too; the runner records `lessonsApplied` in step 1 of every job.
+- The learner posts a short summary to Google Chat when something new was learned.
+
+### Toward full autonomy: Claude Code on Railway (not enabled)
+Autonomous code changes need a **live executor** inside `agent-runner`: the Claude Agent SDK (headless
+Claude Code) loading this team's `.claude` agents/commands/skills from a private toolkit repo, a
+clone of the microservice repo, JDK + Gradle, and a GitHub token for branch/PR — with an approval gate
+before commit/push/PR. It stays off until (1) team-lead/security approval to run company code in
+Railway and send it to the Anthropic API, (2) `ANTHROPIC_API_KEY`, (3) a scoped GitHub token.
+Step 3 (logs) remains local because QA/UAT servers are on the office network.
 
 ---
 
@@ -399,6 +441,7 @@ messages instead of sending them, so the services can be deployed before the sec
 
 | Date | Change |
 |---|---|
+| 2026-09-27 | **Learning loop**: `learner` cron service (every 2h) scores jobs from Jira outcomes (done +1, QA +0.5, reopened −1, failed −0.5, slow hand-off −0.1), reinforces lessons (EMA), publishes them to team memory; runner step 1 applies top lessons; poller requeues a finished ticket only when Jira changed after the job. New tables `episodes`, `lessons`; 6 new tests. Design note for Claude Code on Railway (not enabled). |
 | 2026-09-24 | DDP hub no longer drifts away from a small team: DDP ↔ person distance scales with team size (180 + 70 per extra person, was fixed 600), firmer pull (0.12, was 0.02), gentler hub repel (6×, was 20×), brighter DDP thread. |
 | 2026-09-24 | Teammates can connect without cloning: env vars + agentmemory plugin + one downloaded hook file; the repo is only needed for backfill and Obsidian. |
 | 2026-09-24 | Decluttered graph (review: "too congested"): hierarchy person → ticket/service, service → file (people no longer link straight to every file: 575 → 426 short threads in the dummy team); thread opacity 0.22; live glow lasts 20s and only the 12 most recent items glow; softer glow (strength 0.6, threshold 0.92). |

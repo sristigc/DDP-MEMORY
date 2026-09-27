@@ -8,6 +8,11 @@
 //   finish(jobId, status, result)               -> job          (running -> succeeded|failed|awaiting_local)
 //   resume(jobId, note)                         -> job | null   (awaiting_local -> queued; keeps result.nextStep)
 //   get(jobId) / events(jobId) / list({ status, limit })
+// Learning loop:
+//   lastJob(jiraKey) / jobsToScore() / getEpisode(jobId) / listEpisodes(limit)
+//   recordEpisode({ jobId, jiraKey, reward, signals })   upsert, one per job
+//   reinforceLesson({ scope, kind, text, reward, alpha }) -> lesson (weight += alpha * (reward - weight))
+//   topLessons(scopes, limit)                            most-evidenced lessons for these scopes
 
 import { MemoryStore } from "./memory.mjs";
 

@@ -63,6 +63,48 @@ export class PostgresStore {
     return res.rows[0] || null;
   }
 
+  // ---------- learning loop ----------
+  async lastJob(jiraKey) {
+    return (await this.pool.query(`SELECT * FROM jobs WHERE jira_key = $1 ORDER BY id DESC LIMIT 1`, [jiraKey])).rows[0] || null;
+  }
+
+  async jobsToScore() {
+    return (await this.pool.query(`SELECT * FROM jobs WHERE status IN ('succeeded', 'failed', 'awaiting_local') ORDER BY id`)).rows;
+  }
+
+  async recordEpisode({ jobId, jiraKey, reward, signals }) {
+    await this.pool.query(
+      `INSERT INTO episodes (job_id, jira_key, reward, signals) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (job_id) DO UPDATE SET reward = EXCLUDED.reward, signals = EXCLUDED.signals, scored_at = now()`,
+      [jobId, jiraKey, reward, signals],
+    );
+  }
+
+  async getEpisode(jobId) {
+    return (await this.pool.query(`SELECT * FROM episodes WHERE job_id = $1`, [jobId])).rows[0] || null;
+  }
+
+  async listEpisodes(limit = 100) {
+    return (await this.pool.query(`SELECT * FROM episodes ORDER BY job_id DESC LIMIT $1`, [limit])).rows;
+  }
+
+  /** EMA update: weight += alpha * (reward - weight); evidence counts observations. */
+  async reinforceLesson({ scope, kind, text, reward, alpha = 0.3 }) {
+    const res = await this.pool.query(
+      `INSERT INTO lessons (scope, kind, text, weight, evidence) VALUES ($1, $2, $3, $4 * $5, 1)
+       ON CONFLICT (scope, kind, text) DO UPDATE
+         SET weight = lessons.weight + $5 * ($4 - lessons.weight), evidence = lessons.evidence + 1, updated_at = now()
+       RETURNING *`,
+      [scope, kind, text, reward, alpha],
+    );
+    return res.rows[0];
+  }
+
+  async topLessons(scopes, limit = 10) {
+    return (await this.pool.query(
+      `SELECT * FROM lessons WHERE scope = ANY($1) ORDER BY evidence DESC, abs(weight) DESC LIMIT $2`, [scopes, limit])).rows;
+  }
+
   async get(jobId) { return (await this.pool.query(`SELECT * FROM jobs WHERE id = $1`, [jobId])).rows[0] || null; }
   async events(jobId) { return (await this.pool.query(`SELECT * FROM job_events WHERE job_id = $1 ORDER BY at, id`, [jobId])).rows; }
   async list({ status, limit = 50 } = {}) {

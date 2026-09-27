@@ -104,6 +104,10 @@ export class SystemMonitor {
     this.status.set("postgres", { state: runnerUp ? "up" : "unknown", detail: runnerUp ? "in use by agent-runner" : "no signal", checkedAt: at });
     const team = this.busy("claude-code", "agentmemory");
     this.status.set("claude-code", { state: team ? "active" : "idle", detail: team ? "sessions writing to memory" : "no new observations in 2 min", checkedAt: at });
+    // Other cron jobs (e.g. learner) have no endpoint to probe: show them as scheduled.
+    for (const s of this.m.services) {
+      if (s.cron && !s.health && !this.status.has(s.name)) this.status.set(s.name, { state: "scheduled", detail: `cron ${s.cron}`, checkedAt: at });
+    }
   }
 
   /** New jobs in the last few minutes mean the poller just ran. */
