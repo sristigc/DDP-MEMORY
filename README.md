@@ -154,13 +154,16 @@ rewrites `Host` to `localhost:8082` (`VIEWER_HOST_HEADER`). If the viewer port e
    ```
    (Fallback: `npx -y @agentmemory/agentmemory@0.9.29 connect claude-code --with-hooks`)
 5. **Galaxy owner hook** — tells the 3D Galaxy which globe your sessions belong to (uses your
-   `git config user.email`; override with a `DDP_PERSON` env var). Clone this repo, then add to
-   `~/.claude/settings.json`:
+   `git config user.email`; override with a `DDP_PERSON` env var). **No clone needed**: download the one
+   file, then add it to `~/.claude/settings.json` (a clone at `C:/DDP-MEMORY` works too; point the command there):
+   ```bash
+   mkdir -p ~/.claude/hooks && curl -fsSL https://raw.githubusercontent.com/sristigc/DDP-MEMORY/main/hooks/session-owner.mjs -o ~/.claude/hooks/session-owner.mjs
+   ```
    ```json
    {
      "hooks": {
        "SessionStart": [
-         { "hooks": [ { "type": "command", "command": "node C:/DDP-MEMORY/hooks/session-owner.mjs" } ] }
+         { "hooks": [ { "type": "command", "command": "node C:/Users/<you>/.claude/hooks/session-owner.mjs" } ] }
        ]
      }
    }
@@ -240,7 +243,7 @@ node tools/tag-sessions.mjs exports/redacted.export.json
 
 `https://agentmemory-viewer-caddy-production-ecfa.up.railway.app/galaxy/` (same login as the dashboard). Page title: **DDP MEMORY Graph**.
 
-- **Obsidian-style constellation**: every ticket/service/file is a glowing dot sized by activity,
+- **Obsidian-style constellation**: every ticket/service/file is a dot sized by activity; people link to their tickets and services, files hang off their service,
   thin grey edges, clusters form from forces (each person's work pulls toward that person), loose
   items drift to the rim. **DDP** sits at the centre with every person linked to it.
 - **White** = context shared by 2+ people; the arcs between people are weighted by how much they share.
@@ -396,6 +399,9 @@ messages instead of sending them, so the services can be deployed before the sec
 
 | Date | Change |
 |---|---|
+| 2026-09-24 | DDP hub no longer drifts away from a small team: DDP ↔ person distance scales with team size (180 + 70 per extra person, was fixed 600), firmer pull (0.12, was 0.02), gentler hub repel (6×, was 20×), brighter DDP thread. |
+| 2026-09-24 | Teammates can connect without cloning: env vars + agentmemory plugin + one downloaded hook file; the repo is only needed for backfill and Obsidian. |
+| 2026-09-24 | Decluttered graph (review: "too congested"): hierarchy person → ticket/service, service → file (people no longer link straight to every file: 575 → 426 short threads in the dummy team); thread opacity 0.22; live glow lasts 20s and only the 12 most recent items glow; softer glow (strength 0.6, threshold 0.92). |
 | 2026-09-24 | Mirror: every push now also goes to the private github.com/sristtiii/DDP-MEMORY (second push URL on `origin`). |
 | 2026-09-24 | **System canvas** at `/galaxy/system.html`: services grouped by layer from `galaxy/system/**/*.md` manifests (same convention as `.claude/`), live health over the private network, connections animate when busy (white, fast) or polling (grey, slow). Linked from the graph header. 6 new tests. |
 | 2026-09-24 | Person globes smaller (radius 16 + 3·√items) and fainter (opacity 0.025). |

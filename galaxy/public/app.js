@@ -7,7 +7,7 @@ import { forceX, forceY, forceZ } from "https://esm.sh/d3-force-3d@3.0.6";
 
 // Dark, restrained palette. Only pure white is bright enough to trip the glow (bloom threshold),
 // so just the DDP parent and live threads/nodes glow; everything else stays matte.
-const C = { bg: "#000000", ivory: "#d4d4d8", muted: "#6b6b70", gold: "#ffffff", live: "#ffffff", link: "#6a6a72", session: "#55555c" };
+const C = { bg: "#000000", ivory: "#d4d4d8", muted: "#6b6b70", gold: "#ffffff", live: "#ffffff", link: "#4a4a52", session: "#55555c" };
 // "Role" colouring (default), all greyscale: parent white, people light grey, own work dark grey,
 // shared context a lighter mid-grey. Only the parent is pure white, so only it (and live threads) glow.
 const ROLE = { project: "#ffffff", person: "#d0d0d4", own: "#6e6e74", shared: "#b4b4ba", session: "#4a4a50" };
@@ -16,12 +16,13 @@ const SERVICE_TONES = ["#c46a3a", "#7b8fd6", "#5fae91", "#c0607f", "#b89b5e", "#
 const TYPE_TONES = { project: "#ffffff", person: "#e6e6e6", ticket: "#c8c8c8", service: "#a0a0a6", file: "#7c7c82", session: C.session };
 const MONO = ["#d9d9d9", "#b8b8bc", "#9a9aa0", "#c9c9cc", "#a9a9ae", "#8c8c92", "#bdbdc1", "#9f9fa4"];
 const HUB = "hub:DDP";
-const LIVE_GLOW_MS = 90e3;
+const LIVE_GLOW_MS = 20e3;   // a touch stays lit for 20s
+const LIVE_MAX = 12;         // only the most recent touches glow, so bursts never flood the screen
 const $ = (id) => document.getElementById(id);
 
 const ui = {
   dims: 3, colorBy: "role", labels: "people", globes: true, bloom: true,
-  nodeSize: 1, linkWidth: 0, linkOpacity: 0.5,
+  nodeSize: 1, linkWidth: 0, linkOpacity: 0.22,
   center: 0.008, repel: 90, linkForce: 0.06, linkDist: 90, groupPull: 0.04,
   filters: { ticket: true, service: true, file: true, session: false }, sharedOnly: false, query: "",
 };
@@ -98,11 +99,14 @@ function groupForce() {
   return force;
 }
 
+// DDP <-> person distance grows with the team: close with one or two people, spread out with many.
+function memberDistance() { return 180 + 70 * Math.max(0, state.people.size - 1); }
+
 function applyForces(reheat = true) {
-  Graph.d3Force("charge").strength((n) => -ui.repel * (n.type === "project" ? 20 : n.type === "person" ? 14 : 1)).distanceMax(2500);
+  Graph.d3Force("charge").strength((n) => -ui.repel * (n.type === "project" ? 6 : n.type === "person" ? 10 : 1)).distanceMax(2500);
   Graph.d3Force("link")
-    .strength((l) => (l.type === "shared" ? 0 : l.type === "member" ? 0.02 : ui.linkForce))
-    .distance((l) => (l.type === "member" ? 600 : l.type === "owns" || l.type === "works" ? ui.linkDist * 1.5 : ui.linkDist));
+    .strength((l) => (l.type === "shared" ? 0 : l.type === "member" ? 0.12 : ui.linkForce))
+    .distance((l) => (l.type === "member" ? memberDistance() : l.type === "owns" || l.type === "works" ? ui.linkDist * 1.5 : ui.linkDist));
   Graph.d3Force("x", forceX(0).strength(ui.center));
   Graph.d3Force("y", forceY(0).strength(ui.center));
   Graph.d3Force("z", ui.dims === 3 ? forceZ(0).strength(ui.center) : null);
@@ -133,7 +137,7 @@ Object.assign(controls, { enableDamping: true, dampingFactor: 0.1, zoomSpeed: 1.
 let bloomPass = null;
 try {
   // High threshold: only pure white (live threads, live nodes, DDP) crosses it and glows.
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.55, 0.9);
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.3, 0.92);
   bloomPass.enabled = ui.bloom;
   Graph.postProcessingComposer().addPass(bloomPass);
 }
@@ -156,9 +160,9 @@ function applyStyles(rebuildLabels = false) {
     .linkOpacity(ui.linkOpacity)
     // Grey-and-white threads: work threads dark grey, person↔DDP mid grey, shared-context threads near white;
     // live threads get their own bright material (full opacity) and glow.
-    .linkColor((l) => (l.type === "shared" ? "#e6e6ea" : l.type === "member" ? "#a6a6ac" : l.type === "works" ? "#8e8e96" : C.link))
+    .linkColor((l) => (l.type === "shared" ? "#c8c8cc" : l.type === "member" ? "#b8b8be" : l.type === "works" ? "#6e6e76" : C.link))
     .linkMaterial((l) => (linkLive(l) ? LIVE_THREAD : null))
-    .linkWidth((l) => (linkLive(l) ? Math.max(ui.linkWidth, 0.7) : ui.linkWidth))
+    .linkWidth((l) => (linkLive(l) ? Math.max(ui.linkWidth, 0.35) : ui.linkWidth))
     .linkDirectionalParticles(0);
 }
 const LIVE_THREAD = new THREE.MeshBasicMaterial({ color: C.live, transparent: true, opacity: 1, depthWrite: false });
@@ -177,7 +181,7 @@ function isVisible(n) {
 }
 // Person -> work threads: direct "works" links when sessions are hidden, the session path when shown.
 function linkVisible(l) {
-  if (l.type === "works" && ui.filters.session) return false;
+  if ((l.type === "works" || l.type === "contains") && ui.filters.session) return false;
   const [s, t] = ends(l);
   return isVisible(state.byId.get(s)) && isVisible(state.byId.get(t));
 }
@@ -357,7 +361,13 @@ function restyleSoon() {
 
 function onTouch(ev) {
   const until = Date.now() + LIVE_GLOW_MS;
-  for (const id of [ev.sessionNode, `p:${ev.person}`, ...ev.ids]) state.glow.set(id, until);
+  for (const id of [ev.sessionNode, `p:${ev.person}`, ...ev.ids]) {
+    state.glow.delete(id); // re-insert so Map order = recency
+    state.glow.set(id, until);
+  }
+  // Keep only the most recent LIVE_MAX tickets/services/files lit; people and sessions stay lit.
+  const items = [...state.glow.keys()].filter((id) => !id.startsWith("p:") && !id.startsWith("x:"));
+  for (const id of items.slice(0, Math.max(0, items.length - LIVE_MAX))) state.glow.delete(id);
   for (const id of ev.ids) state.pulses.set(id, performance.now() + 2500);
   state.pulses.set(`p:${ev.person}`, performance.now() + 1500);
   const others = new Set();

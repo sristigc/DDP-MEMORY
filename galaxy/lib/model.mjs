@@ -138,17 +138,23 @@ function finish(nodes, links, people) {
     }
   }
 
-  // Direct person -> work threads (sessions collapsed), so a person stays visibly connected to their
-  // tickets/services/files even when session nodes are hidden. Shared items get one thread per owner.
+  // Hierarchy for the collapsed view (sessions hidden): person -> ticket/service, service -> file.
+  // Files hang off their microservice instead of every person, which keeps each globe readable.
+  // Shared tickets/services get one thread per owner; a shared file is shown by its colour.
   const works = new Map();
   for (const l of links.values()) {
-    if (!l.source.startsWith("x:") || !nodes.has(l.target)) continue;
+    if (!l.source.startsWith("x:") || !nodes.has(l.target) || l.target.startsWith("f:")) continue;
     const person = nodes.get(l.source)?.person;
     if (!person) continue;
     const key = `p:${person}|${l.target}`;
     const w = works.get(key) || { source: `p:${person}`, target: l.target, type: "works", weight: 0 };
     w.weight += l.weight;
     works.set(key, w);
+  }
+
+  const contains = [];
+  for (const n of nodes.values()) {
+    if (n.type === "file" && nodes.has(`s:${n.service}`)) contains.push({ source: `s:${n.service}`, target: n.id, type: "contains", weight: n.weight });
   }
 
   // Parent project hub: every person's globe hangs off it.
@@ -161,7 +167,7 @@ function finish(nodes, links, people) {
     ...personList.map((p) => ({ id: p.id, type: "person", name: p.name, person: p.person, owners: [p.person], color: p.color, sessions: p.sessions, active: p.active, weight: p.sessions })),
     ...[...nodes.values()].map((n) => ({ ...n, owners: [...n.owners], shared: n.owners.size > 1 })),
   ];
-  const outLinks = [...members, ...links.values(), ...works.values(), ...shared.values()];
+  const outLinks = [...members, ...links.values(), ...works.values(), ...contains, ...shared.values()];
   const stats = {
     people: personList.length,
     sessions: outNodes.filter((n) => n.type === "session").length,

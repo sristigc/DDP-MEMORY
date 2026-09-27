@@ -52,12 +52,14 @@ test("DDP hub links every person", () => {
   assert.deepEqual(g.links.filter((l) => l.type === "member").map((l) => l.source).sort(), ["p:a@x.com", "p:b@x.com"]);
 });
 
-test("each person gets direct 'works' threads to their items, one per owner for shared items", () => {
+test("collapsed hierarchy: person -> service (one thread per owner), service -> file", () => {
   const f = "C:\\DDP\\novopay-platform-actor\\X.java";
   const obsBySession = new Map([["s1", [{ id: "o1", type: "file_edit", files: [f] }]], ["s2", [{ id: "o2", type: "file_read", files: [f] }]]]);
   const g = buildGraph({ sessions: [{ id: "s1" }, { id: "s2" }], obsBySession, ownerOf: new Map([["s1", "a@x.com"], ["s2", "b@x.com"]]), ticketPrefixes: PREFIXES });
-  const works = g.links.filter((l) => l.type === "works" && l.target === "f:novopay-platform-actor/X.java");
+  const works = g.links.filter((l) => l.type === "works" && l.target === "s:novopay-platform-actor");
   assert.deepEqual(works.map((l) => l.source).sort(), ["p:a@x.com", "p:b@x.com"]);
+  assert.ok(!g.links.some((l) => l.type === "works" && l.target.startsWith("f:")), "people never link straight to files");
+  assert.ok(g.links.some((l) => l.type === "contains" && l.source === "s:novopay-platform-actor" && l.target === "f:novopay-platform-actor/X.java"));
 });
 
 test("sessions without an owner go to the unassigned globe", () => {
