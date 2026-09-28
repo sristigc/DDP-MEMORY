@@ -182,3 +182,31 @@ test("local worker API: lease a paused job once, record steps, release or resume
     assert.equal((await store.get(job.id)).status, "queued");
   });
 });
+
+test("approval gate: a fix waiting for review is not leased; approve makes it leasable; review page renders", async () => {
+  const store = new MemoryStore();
+  const { job } = await store.enqueue({ jiraKey: "DPB-2070", summary: "Block multiple funding" });
+  await store.claim("runner");
+  await store.finish(job.id, "awaiting_local", { nextStep: "pull" });
+  await serve(createApi({ store, stats: {}, log: quiet }), async (base) => {
+    const post = (p, b) => fetch(`${base}${p}`, { method: "POST", body: JSON.stringify(b) });
+    assert.equal((await post("/agent/jobs/claim-local", { workerId: "w1" })).status, 200);
+    assert.equal((await post(`/agent/jobs/${job.id}/phase`, { workerId: "other", patch: { phase: "x" } })).status, 409, "only the lease holder");
+    assert.equal((await post(`/agent/jobs/${job.id}/phase`, { workerId: "w1", patch: { decision: "approved" } })).status, 400, "workers cannot approve");
+    const fix = { repo: "novopay-platform-banking-origination", base: "ddp-uat", branch: "ddp-agent/DPB-2070-job1", build: "PASS", diffStat: "2 files", diff: "+ <script>x</script>" };
+    assert.equal((await post(`/agent/jobs/${job.id}/phase`, { workerId: "w1", patch: { phase: "awaiting_approval", fix } })).status, 200);
+    await post(`/agent/jobs/${job.id}/release`, { workerId: "w1" });
+    assert.equal((await post("/agent/jobs/claim-local", { workerId: "w1" })).status, 204, "waiting for a person, not for the worker");
+
+    const page = await (await fetch(`${base}/agent/jobs/${job.id}/review`)).text();
+    assert.match(page, /Approve: commit, push, open draft PR/);
+    assert.ok(!page.includes("<script>x</script>"), "diff is escaped");
+
+    const form = await fetch(`${base}/agent/jobs/${job.id}/approve`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "", redirect: "manual" });
+    assert.equal(form.status, 303);
+    assert.equal((await post(`/agent/jobs/${job.id}/approve`, {})).status, 409, "decided once");
+    const lease = await post("/agent/jobs/claim-local", { workerId: "w1" });
+    assert.equal(lease.status, 200);
+    assert.equal((await lease.json()).job.result.decision, "approved");
+  });
+});

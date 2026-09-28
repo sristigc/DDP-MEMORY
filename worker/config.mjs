@@ -15,6 +15,8 @@ export function loadConfig(env = process.env) {
     pollMs: Number(get("DDP_POLL_MIN", "10")) * 60e3,
     usageBackoffMs: Number(get("DDP_USAGE_BACKOFF_MIN", "30")) * 60e3,
     allowDb: get("DDP_WORKER_ALLOW_DB", "0") === "1",
+    worktreesDir: get("DDP_WORKTREES_DIR", `${get("DDP_REPO_ROOT", "C:/DDP")}/.ddp-worktrees`),
+    fixTimeoutMs: Number(get("CLAUDE_FIX_TIMEOUT_MIN", "60")) * 60e3,
     reportsDir: get("DDP_REPORTS_DIR", new URL("./reports/", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")),
   };
 }
@@ -24,6 +26,6 @@ export function assertConfig(cfg) {
   if (!cfg.apiUser) missing.push("DDP_API_USER");
   if (!cfg.apiPass) missing.push("DDP_API_PASS");
   if (missing.length) throw new Error(`set ${missing.join(" and ")} (the dashboard login) — see worker/README.md`);
-  if (cfg.mode !== "analyse") throw new Error(`DDP_WORKER_MODE=${cfg.mode} is not available yet; only "analyse"`);
+  if (!["analyse", "fix"].includes(cfg.mode)) throw new Error(`DDP_WORKER_MODE must be "analyse" or "fix" (got ${cfg.mode})`);
 }
 

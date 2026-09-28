@@ -9,7 +9,8 @@ export async function processNext({ store, executor, notifier, memory, workerId,
   try {
     const fromStep = job.result?.nextStep || undefined;
     const out = await runPipeline(job, { executor, store, fromStep });
-    const finished = await store.finish(job.id, out.status, { nextStep: out.nextStep, handoffStep: out.handoffStep || null });
+    // Keep what local steps recorded (analysis, fix branch, PR link); only advance the step pointer.
+    const finished = await store.finish(job.id, out.status, { ...(job.result || {}), nextStep: out.nextStep, handoffStep: out.handoffStep || null });
     const text = out.status === "awaiting_local"
       ? `${job.jira_key}: steps done up to logs. Check the logs locally, then resume. ${job.url}`
       : `${job.jira_key}: pipeline finished (${executor.mode}). ${job.url}`;

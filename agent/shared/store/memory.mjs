@@ -57,9 +57,20 @@ export class MemoryStore {
     const now = Date.now();
     const job = [...this.jobs.values()]
       .filter((j) => j.status === "awaiting_local" && (!j.locked_by || Date.parse(j.locked_at) < now - staleAfterMs))
+      // A fix waiting for a human decision is not work for the worker until approved or rejected.
+      .filter((j) => j.result?.phase !== "awaiting_approval" || j.result?.decision)
       .sort((a, b) => a.id - b.id)[0];
     if (!job) return null;
     Object.assign(job, { locked_by: workerId, locked_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() });
+    return { ...job };
+  }
+
+  /** Merge fields into job.result (e.g. { phase: "awaiting_approval", fix: {...} }). */
+  async patchResult(jobId, patch) {
+    const job = this.jobs.get(jobId);
+    if (!job) return null;
+    job.result = { ...(job.result || {}), ...patch };
+    job.updated_at = new Date().toISOString();
     return { ...job };
   }
 

@@ -11,6 +11,7 @@
 // Local worker (ddp-worker):
 //   claimLocal(workerId, staleAfterMs) -> job | null   (lease an awaiting_local job; stale leases can be taken over)
 //   releaseLocal(jobId, workerId)      -> job | null   (give the lease back untouched)
+//   patchResult(jobId, patch)          -> job          (merge into result; phase "awaiting_approval" pauses leasing until a decision)
 // Learning loop:
 //   lastJob(jiraKey) / jobsToScore() / getEpisode(jobId) / listEpisodes(limit)
 //   recordEpisode({ jobId, jiraKey, reward, signals })   upsert, one per job

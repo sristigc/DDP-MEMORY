@@ -27,4 +27,6 @@ export class JobsApi {
   event(jobId, ev) { return this.call("POST", `/jobs/${jobId}/events`, ev); }
   release(jobId, workerId) { return this.call("POST", `/jobs/${jobId}/release`, { workerId }); }
   resume(jobId, note) { return this.call("POST", `/jobs/${jobId}/resume`, { note }); }
+  phase(jobId, workerId, patch) { return this.call("POST", `/jobs/${jobId}/phase`, { workerId, patch }); }
+  reviewUrl(jobId) { return `${this.base}/jobs/${jobId}/review`; }
 }

@@ -450,8 +450,9 @@ Details and setup: [`worker/README.md`](worker/README.md).
   4–9, the result lands in memory, and the learner can turn it into a lesson.
 - Claude usage limit reached → the job is released untouched and retried later.
 - Runner API additions: `POST /agent/jobs/claim-local`, `/agent/jobs/:id/events`, `/agent/jobs/:id/release`.
-- Next mode (not built yet): code change + gradle + review-agent, then stop for approval before
-  commit/PR.
+- **Fix mode** (`DDP_WORKER_MODE=fix`): fresh worktree from `origin/<base>`, Claude edits + `gradlew build`
+  there, then the job waits on the **review page** (`/agent/jobs/<id>/review`, Approve / Reject). Only after
+  approval does the worker commit, push and open a **draft PR**. Runner API: `/phase`, `/approve`, `/reject`, `/review`.
 
 ---
 
@@ -459,6 +460,7 @@ Details and setup: [`worker/README.md`](worker/README.md).
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | **ddp-worker fix mode**: isolated worktree from origin/<base>, fix + gradle build by headless Claude (edit only in the worktree; commit/push/pull still blocked), approval gate with a review page (Approve / Reject) before the worker commits, pushes and opens a draft PR. Runner keeps local-step results when finishing a job. +5 worker, +1 API tests. |
 | 2026-09-28 | **ddp-worker** (`worker/`): runs job step 3 locally with headless Claude Code (subscription login, read-only allowlist: code, git fetch/log/diff, Jira read, memory recall, Elasticsearch logs; DB opt-in), reports back and resumes the job; releases on usage limit. Runner API: claim-local / events / release; store: claimLocal / releaseLocal. 8 worker + 1 API tests. |
 | 2026-09-28 | Learner schedule **paused** on request: cron removed (service kept, restart policy NEVER). Re-enable with Cron `30 */2 * * *` on the `learner` service and a redeploy. |
 | 2026-09-27 | Fix: learner saved the episode before its lessons, so a crash mid-pass left the outcome marked as learned with no lesson. Lessons are now written first and the episode last; outcome signature is versioned (`SIGNATURE_VERSION`) so rule changes re-learn past episodes once. +1 test. |

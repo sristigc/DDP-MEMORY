@@ -17,12 +17,20 @@ export const ANALYSE_TOOLS = [
 ];
 // Opt-in (DDP_WORKER_ALLOW_DB=1): read-only QA/UAT queries through the db-connections skill's client.
 export const DB_TOOLS = ["Bash(mysqlsh:*)"]; // needs mysqlsh on PATH (see README)
-export const NEVER_TOOLS = ["Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(git pull:*)"];
+// Fix mode (second pass): edit files inside the prepared worktree and build. Still no commit/push/pull —
+// those happen in git.mjs, only after a human approves on the review page.
+export const FIX_TOOLS = [
+  "Read", "Grep", "Glob", "Agent", "Edit", "Write",
+  "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
+  "Bash(./gradlew:*)", "Bash(gradlew:*)", "Bash(gradlew.bat:*)", "Bash(./gradlew.bat:*)",
+  "mcp__agentmemory__memory_smart_search", "mcp__agentmemory__memory_recall",
+];
+export const NEVER_TOOLS = ["Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(git pull:*)", "Bash(git worktree:*)", "Bash(git switch:*)", "Bash(git rebase:*)", "Bash(git merge:*)", "Bash(git stash:*)"];
 
 const USAGE_RE = /usage limit|limit reached|rate limit|quota|out of (credits|usage)|429/i;
 
-export function claudeArgs({ allowDb = false } = {}) {
-  const allowed = allowDb ? [...ANALYSE_TOOLS, ...DB_TOOLS] : ANALYSE_TOOLS;
+export function claudeArgs({ allowDb = false, tools } = {}) {
+  const allowed = tools || (allowDb ? [...ANALYSE_TOOLS, ...DB_TOOLS] : ANALYSE_TOOLS);
   return ["-p", "--output-format", "json", "--allowedTools", allowed.join(","), "--disallowedTools", NEVER_TOOLS.join(",")];
 }
 
@@ -31,8 +39,8 @@ const winQuote = (a) => (/[\s"(),*:]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : 
 /**
  * @returns {Promise<{ text: string, costUsd: number|null, turns: number|null }>}
  */
-export function runClaude({ prompt, cwd, bin = "claude", timeoutMs = 30 * 60e3, allowDb = false, spawnImpl = spawn }) {
-  const args = claudeArgs({ allowDb });
+export function runClaude({ prompt, cwd, bin = "claude", timeoutMs = 30 * 60e3, allowDb = false, tools, spawnImpl = spawn }) {
+  const args = claudeArgs({ allowDb, tools });
   const win = process.platform === "win32";
   return new Promise((resolve, reject) => {
     const child = spawnImpl(bin, win ? args.map(winQuote) : args, { cwd, shell: win, windowsHide: true });

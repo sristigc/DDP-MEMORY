@@ -12,7 +12,11 @@ This machine: ddp-worker ── lease job ── claude -p (in C:\DDP, read-only
 Railway: job resumed with the summary → runner steps 4–9 → memory → learner ◀────┘
 ```
 
-## Mode: `analyse` (the only mode for now)
+## Modes
+`DDP_WORKER_MODE=analyse` (default) — report only. `DDP_WORKER_MODE=fix` — analyse, then implement and build
+in an isolated worktree, then **wait for your approval** before commit / push / draft PR (see below).
+
+### `analyse`
 Headless Claude Code follows `C:\DDP\CLAUDE.md` and `.claude/` (jira-ticket command, fullstack-agent,
 skills) with a **read-only tool allowlist**:
 
@@ -31,6 +35,18 @@ resume note — which the learner turns into a lesson.
 
 If your Claude usage limit is reached, the job is **released untouched** and retried after
 `DDP_USAGE_BACKOFF_MIN` (30). Nothing fails.
+
+### `fix` (approval-gated)
+1. Analysis pass as above; its last line names the repo and base branch (`DDP_FIX_TARGET`).
+2. The worker (not Claude) fetches and creates a **fresh git worktree** from `origin/<base>` on branch
+   `ddp-agent/<KEY>-job<id>` under `C:/DDP/.ddp-worktrees/` — your own working copies are never touched.
+3. Fix pass: Claude may **Edit/Write inside that worktree** and run `gradlew build`; it still cannot commit,
+   push, pull, switch branches or write to Jira. It follows `CLAUDE.md` and `coding-agent.md`.
+4. The diff, build result and summary go to the job; the job waits at
+   **`<dashboard>/agent/jobs/<id>/review`** with **Approve** / **Reject** buttons (dashboard login).
+5. **Approve** → next worker poll commits, pushes the branch and opens a **draft PR** with `gh`
+   (needs push rights; the PR body says it was agent-made and human-approved). **Reject** → worktree removed,
+   nothing committed. Either way the job resumes and the runner finishes steps 4–9.
 
 ## Setup (once)
 ```powershell
@@ -61,7 +77,9 @@ To run it in the background at logon: Windows Task Scheduler → *Create Basic T
 | `DDP_API_USER` / `DDP_API_PASS` | — (required) | dashboard login |
 | `DDP_REPO_ROOT` | `C:/DDP` | where Claude runs (CLAUDE.md + .claude/) |
 | `DDP_WORKER_ID` | `<hostname>-<user>` | shown on the job |
-| `DDP_WORKER_MODE` | `analyse` | only mode available |
+| `DDP_WORKER_MODE` | `analyse` | `analyse` or `fix` (approval-gated) |
+| `DDP_WORKTREES_DIR` | `<DDP_REPO_ROOT>/.ddp-worktrees` | where fix worktrees are created |
+| `CLAUDE_FIX_TIMEOUT_MIN` | 60 | fix pass incl. gradle build |
 | `DDP_WORKER_ALLOW_DB` | `0` | read-only DB queries |
 | `DDP_POLL_MIN` / `DDP_USAGE_BACKOFF_MIN` | 10 / 30 | |
 | `CLAUDE_BIN` / `CLAUDE_TIMEOUT_MIN` | `claude` / 30 | |

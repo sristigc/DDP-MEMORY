@@ -23,7 +23,7 @@ async function main() {
     try { outcome = await processOne({ api, cfg, run: runClaude, log }); }
     catch (err) { outcome = { status: "error", error: err.message }; log(`poll failed: ${err.message}`); }
     if (once) { log(`done: ${outcome.status}`); process.exitCode = outcome.status === "error" ? 1 : 0; return; }
-    if (outcome.status === "done") continue;                         // more work may be waiting
+    if (outcome.status === "done" || outcome.status === "awaiting-approval") continue; // more work may be waiting
     const wait = outcome.status === "usage-limit" ? cfg.usageBackoffMs : cfg.pollMs;
     if (outcome.status === "idle") log(`no paused jobs; next check in ${Math.round(wait / 6e4)} min`);
     await sleep(wait);

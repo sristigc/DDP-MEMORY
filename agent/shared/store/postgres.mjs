@@ -72,11 +72,21 @@ export class PostgresStore {
          SELECT id FROM jobs
          WHERE status = 'awaiting_local'
            AND (locked_by IS NULL OR locked_at < now() - ($2::bigint * interval '1 millisecond'))
+           AND (COALESCE(result->>'phase', '') <> 'awaiting_approval' OR result ? 'decision')
          ORDER BY id
          FOR UPDATE SKIP LOCKED
          LIMIT 1)
        RETURNING *`,
       [workerId, staleAfterMs],
+    );
+    return res.rows[0] || null;
+  }
+
+  /** Merge fields into job.result (jsonb ||). */
+  async patchResult(jobId, patch) {
+    const res = await this.pool.query(
+      `UPDATE jobs SET result = result || $2::jsonb, updated_at = now() WHERE id = $1 RETURNING *`,
+      [jobId, JSON.stringify(patch)],
     );
     return res.rows[0] || null;
   }

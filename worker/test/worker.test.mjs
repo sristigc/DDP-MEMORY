@@ -6,7 +6,8 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { processOne } from "../process.mjs";
 import { UsageLimitError, runClaude, claudeArgs, ANALYSE_TOOLS, NEVER_TOOLS } from "../claude.mjs";
-import { buildPrompt, summaryOf } from "../prompt.mjs";
+import { buildPrompt, summaryOf, fixTargetOf, buildResultOf } from "../prompt.mjs";
+import { validateTarget } from "../git.mjs";
 import { loadConfig, assertConfig } from "../config.mjs";
 
 const quiet = () => {};
@@ -21,6 +22,8 @@ function fakeApi(lease) {
     async event(id, ev) { calls.push(["event", id, ev.type, ev.step]); return { ok: true }; },
     async release(id, w) { calls.push(["release", id, w]); return {}; },
     async resume(id, note) { calls.push(["resume", id, note]); return {}; },
+    async phase(id, w, patch) { calls.push(["phase", id, patch.phase, patch]); return {}; },
+    reviewUrl: (id) => `https://dash/agent/jobs/${id}/review`,
   };
 }
 const LEASE = { job: { id: 7, jira_key: "DPB-2070", summary: "Block multiple funding attempts", url: "https://x/browse/DPB-2070" }, events: [{ data: { pastContext: 4, lessonsApplied: [{ scope: "global", weight: -0.03, text: "check logs sooner" }] } }] };
@@ -97,6 +100,74 @@ test("summaryOf takes the Summary section; buildPrompt states DB rules", () => {
 
 test("config requires the dashboard login and only allows analyse mode", () => {
   assert.throws(() => assertConfig(loadConfig({})), /DDP_API_USER and DDP_API_PASS/);
-  assert.throws(() => assertConfig(loadConfig({ DDP_API_USER: "u", DDP_API_PASS: "p", DDP_WORKER_MODE: "fix" })), /only "analyse"/);
+  assert.throws(() => assertConfig(loadConfig({ DDP_API_USER: "u", DDP_API_PASS: "p", DDP_WORKER_MODE: "yolo" })), /"analyse" or "fix"/);
+  assert.doesNotThrow(() => assertConfig(loadConfig({ DDP_API_USER: "u", DDP_API_PASS: "p", DDP_WORKER_MODE: "fix" })));
   assert.doesNotThrow(() => assertConfig(loadConfig({ DDP_API_USER: "u", DDP_API_PASS: "p" })));
+});
+
+// ---------- fix mode ----------
+const ANALYSIS = `${REPORT}\n## Plan\n1. guard UPI\nDDP_FIX_TARGET: {"repo": "novopay-platform-banking-origination", "base": "ddp-uat"}`;
+function fakeGit({ empty = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    validateTarget: (t) => ({ repo: t.repo, base: t.base, repoDir: `C:/DDP/${t.repo}` }),
+    async prepareWorktree(o) { calls.push(["worktree", o.branch, o.base]); return o.dir; },
+    async diffOf() { calls.push(["diff"]); return empty ? { empty: true } : { empty: false, stat: "2 files changed, 30 insertions(+)", diff: "+ guard" }; },
+    async commitPushPr(o) { calls.push(["ship", o.branch, o.base, o.title]); return "https://github.com/trusttai/repo/pull/99"; },
+    async run(...a) { calls.push(["run", ...a]); return ""; },
+  };
+}
+
+test("fix mode: analyse, worktree from origin/<base>, fix pass with edit tools, then wait for review", async () => {
+  const api = fakeApi(LEASE);
+  const git = fakeGit();
+  const runs = [];
+  const run = async (o) => { runs.push(o); return runs.length === 1 ? { text: ANALYSIS } : { text: "Changed InitiateUPIFundingProcessor\nDDP_BUILD: PASS" }; };
+  const out = await processOne({ api, cfg: { ...cfgFor(tmp()), mode: "fix", worktreesDir: "C:/DDP/.ddp-worktrees", fixTimeoutMs: 1000 }, run, git, log: quiet });
+  assert.equal(out.status, "awaiting-approval");
+  assert.deepEqual(git.calls[0], ["worktree", "ddp-agent/DPB-2070-job7", "ddp-uat"]);
+  assert.ok(runs[1].tools.includes("Edit"), "second pass may edit");
+  assert.ok(!runs[0].tools, "analysis pass keeps the read-only default");
+  const phase = api.calls.find((c) => c[0] === "phase");
+  assert.equal(phase[2], "awaiting_approval");
+  assert.equal(phase[3].fix.build, "PASS");
+  assert.ok(api.calls.some((c) => c[0] === "release"), "lease released while waiting for a person");
+  assert.ok(!api.calls.some((c) => c[0] === "resume"), "not resumed before approval");
+  assert.ok(!git.calls.some((c) => c[0] === "ship"), "nothing committed before approval");
+});
+
+test("approved fix: commit, push, draft PR, job resumed with the PR link", async () => {
+  const fix = { repo: "novopay-platform-banking-origination", base: "ddp-uat", branch: "ddp-agent/DPB-2070-job7", worktree: "C:/w", build: "PASS" };
+  const api = fakeApi({ job: { ...LEASE.job, result: { phase: "awaiting_approval", decision: "approved", fix, analysisSummary: "s" } } });
+  const git = fakeGit();
+  const out = await processOne({ api, cfg: { ...cfgFor(tmp()), mode: "fix" }, run: async () => { throw new Error("no Claude on ship"); }, git, log: quiet });
+  assert.equal(out.status, "done");
+  assert.deepEqual(git.calls[0].slice(0, 3), ["ship", fix.branch, "ddp-uat"]);
+  assert.match(api.calls.find((c) => c[0] === "resume")[2], /pull\/99/);
+});
+
+test("rejected fix: worktree removed, nothing committed, job resumed", async () => {
+  const api = fakeApi({ job: { ...LEASE.job, result: { phase: "awaiting_approval", decision: "rejected", fix: { repo: "novopay-platform-actor", worktree: "C:/w" } } } });
+  const git = fakeGit();
+  const out = await processOne({ api, cfg: { ...cfgFor(tmp()), mode: "fix" }, run: async () => ({}), git, log: quiet });
+  assert.equal(out.status, "done");
+  assert.ok(!git.calls.some((c) => c[0] === "ship"));
+  assert.ok(git.calls.some((c) => c[0] === "run" && c[2].includes("worktree")));
+  assert.match(api.calls.find((c) => c[0] === "resume")[2], /rejected/);
+});
+
+test("fix mode with no proposed repo just resumes with the analysis", async () => {
+  const api = fakeApi(LEASE);
+  const out = await processOne({ api, cfg: { ...cfgFor(tmp()), mode: "fix" }, run: async () => ({ text: `${REPORT}\nDDP_FIX_TARGET: {"repo": null, "base": null}` }), git: fakeGit(), log: quiet });
+  assert.equal(out.status, "done");
+  assert.match(api.calls.find((c) => c[0] === "resume")[2], /No code change proposed/);
+});
+
+test("analysis target parsing and validation guard the git commands", () => {
+  assert.deepEqual(fixTargetOf(ANALYSIS), { repo: "novopay-platform-banking-origination", base: "ddp-uat" });
+  assert.equal(fixTargetOf("no line"), null);
+  assert.equal(buildResultOf("x\nDDP_BUILD: FAIL test X broke"), "FAIL test X broke");
+  assert.throws(() => validateTarget({ repo: "../../etc", base: "main" }, "C:/DDP"), /valid microservice repo/);
+  assert.throws(() => validateTarget({ repo: "novopay-platform-actor", base: "--upload-pack=x" }, "C:/DDP"), /invalid base branch/);
 });
