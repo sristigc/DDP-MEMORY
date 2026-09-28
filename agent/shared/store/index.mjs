@@ -8,6 +8,9 @@
 //   finish(jobId, status, result)               -> job          (running -> succeeded|failed|awaiting_local)
 //   resume(jobId, note)                         -> job | null   (awaiting_local -> queued; keeps result.nextStep)
 //   get(jobId) / events(jobId) / list({ status, limit })
+// Local worker (ddp-worker):
+//   claimLocal(workerId, staleAfterMs) -> job | null   (lease an awaiting_local job; stale leases can be taken over)
+//   releaseLocal(jobId, workerId)      -> job | null   (give the lease back untouched)
 // Learning loop:
 //   lastJob(jiraKey) / jobsToScore() / getEpisode(jobId) / listEpisodes(limit)
 //   recordEpisode({ jobId, jiraKey, reward, signals })   upsert, one per job

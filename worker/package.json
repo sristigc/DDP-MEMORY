@@ -1,0 +1,13 @@
+{
+  "name": "ddp-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs DDP-AGENT local steps with headless Claude Code on an office machine",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "once": "node main.mjs --once",
+    "start": "node main.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

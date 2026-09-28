@@ -63,6 +63,33 @@ export class PostgresStore {
     return res.rows[0] || null;
   }
 
+  // ---------- local worker (ddp-worker on an office machine) ----------
+  /** Leases the oldest job paused for a local step; a lease older than staleAfterMs can be taken over. */
+  async claimLocal(workerId, staleAfterMs = 60 * 60e3) {
+    const res = await this.pool.query(
+      `UPDATE jobs SET locked_by = $1, locked_at = now(), updated_at = now()
+       WHERE id = (
+         SELECT id FROM jobs
+         WHERE status = 'awaiting_local'
+           AND (locked_by IS NULL OR locked_at < now() - ($2::bigint * interval '1 millisecond'))
+         ORDER BY id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1)
+       RETURNING *`,
+      [workerId, staleAfterMs],
+    );
+    return res.rows[0] || null;
+  }
+
+  async releaseLocal(jobId, workerId) {
+    const res = await this.pool.query(
+      `UPDATE jobs SET locked_by = NULL, locked_at = NULL
+       WHERE id = $1 AND status = 'awaiting_local' AND locked_by = $2 RETURNING *`,
+      [jobId, workerId],
+    );
+    return res.rows[0] || null;
+  }
+
   // ---------- learning loop ----------
   async lastJob(jiraKey) {
     return (await this.pool.query(`SELECT * FROM jobs WHERE jira_key = $1 ORDER BY id DESC LIMIT 1`, [jiraKey])).rows[0] || null;

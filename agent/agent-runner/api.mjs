@@ -3,6 +3,13 @@
 //   GET  /agent/jobs[?status=]        recent jobs
 //   GET  /agent/jobs/:id              one job with its step events
 //   POST /agent/jobs/:id/resume       {"note": "..."}  continue after the local log check
+// Used by ddp-worker (office machine) for the local steps:
+//   POST /agent/jobs/claim-local      {"workerId": "..."}  lease the oldest paused job (204 if none)
+//   POST /agent/jobs/:id/events       {"step","type","message","data"}  record a local step
+//   POST /agent/jobs/:id/release      {"workerId": "..."}  give the lease back untouched
+
+const EVENT_TYPES = new Set(["info", "plan", "handoff", "error", "done"]);
+const WORKER_ID_RE = /^[\w.@-]{1,120}$/;
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
 
@@ -36,6 +43,14 @@ export function createApi({ store, stats, log }) {
         const status = url.searchParams.get("status") || undefined;
         return send(res, 200, { jobs: await store.list({ status, limit: 100 }) });
       }
+      if (req.method === "POST" && parts[2] === "claim-local" && parts.length === 3) {
+        const { workerId } = await readJson(req);
+        if (!WORKER_ID_RE.test(String(workerId || ""))) return send(res, 400, { error: "workerId is required (letters, digits, . _ - @)" });
+        const job = await store.claimLocal(workerId);
+        if (!job) { res.writeHead(204).end(); return; }
+        log.info("job leased to local worker", { jobId: job.id, jiraKey: job.jira_key, workerId });
+        return send(res, 200, { job, events: await store.events(job.id) });
+      }
       const id = Number(parts[2]);
       if (!Number.isInteger(id) || id <= 0) return send(res, 400, { error: "job id must be a positive integer" });
 
@@ -49,6 +64,18 @@ export function createApi({ store, stats, log }) {
         if (!job) return send(res, 409, { error: "job is not waiting for a local step" });
         log.info("job resumed", { jobId: id });
         return send(res, 200, { job });
+      }
+      if (req.method === "POST" && parts[3] === "events" && parts.length === 4) {
+        const { step, type, message, data = {} } = await readJson(req, 256 * 1024);
+        if (!step || !message || !EVENT_TYPES.has(type)) return send(res, 400, { error: `step, message and type (${[...EVENT_TYPES].join("/")}) are required` });
+        if (!(await store.get(id))) return send(res, 404, { error: "job not found" });
+        await store.addEvent(id, { step: String(step).slice(0, 60), type, message: String(message).slice(0, 4000), data });
+        return send(res, 201, { ok: true });
+      }
+      if (req.method === "POST" && parts[3] === "release" && parts.length === 4) {
+        const { workerId } = await readJson(req);
+        const job = await store.releaseLocal(id, String(workerId || ""));
+        return job ? send(res, 200, { job }) : send(res, 409, { error: "job is not leased to this worker" });
       }
       return send(res, 405, { error: "method not allowed" });
     } catch (err) {

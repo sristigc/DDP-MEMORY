@@ -52,6 +52,24 @@ export class MemoryStore {
     return { ...job };
   }
 
+  // ---------- local worker (ddp-worker on an office machine) ----------
+  async claimLocal(workerId, staleAfterMs = 60 * 60e3) {
+    const now = Date.now();
+    const job = [...this.jobs.values()]
+      .filter((j) => j.status === "awaiting_local" && (!j.locked_by || Date.parse(j.locked_at) < now - staleAfterMs))
+      .sort((a, b) => a.id - b.id)[0];
+    if (!job) return null;
+    Object.assign(job, { locked_by: workerId, locked_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() });
+    return { ...job };
+  }
+
+  async releaseLocal(jobId, workerId) {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status !== "awaiting_local" || job.locked_by !== workerId) return null;
+    Object.assign(job, { locked_by: null, locked_at: null });
+    return { ...job };
+  }
+
   // ---------- learning loop ----------
   async lastJob(jiraKey) {
     return [...this.jobs.values()].filter((j) => j.jira_key === jiraKey).sort((a, b) => b.id - a.id).map((j) => ({ ...j }))[0] || null;

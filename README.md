@@ -29,6 +29,7 @@ starts with the history instead of from zero.
 | `.gitignore` | Keeps exports, payloads, and `.env` files out of git. |
 | `viewer-proxy/` | Password-protected Caddy proxy for the dashboard (replaces `XavTo/caddy-zero-trust`). Deployed as a second Railway service with Root Directory `viewer-proxy`. |
 | `agent/` | **DDP-AGENT** — jira-poller, agent-runner, notifier, learner + shared job store library (sections 8–9). |
+| `worker/` | **ddp-worker** — runs the local steps of agent jobs on an office machine with headless Claude Code, read-only (section 10). |
 | `galaxy/system/` | Service + group manifests (`.claude`-style `.md` files) that generate the System canvas (section 6b). |
 | `galaxy/` | **DDP Galaxy** — live 3D/2D constellation graph (clusters per person, highlighted shared context). Node service, no npm deps. Served at `/galaxy` behind the dashboard login. |
 | `hooks/session-owner.mjs` | Claude Code SessionStart hook: records which person owns each session. |
@@ -437,10 +438,29 @@ Step 3 (logs) remains local because QA/UAT servers are on the office network.
 
 ---
 
+## 10. ddp-worker (local steps on an office machine)
+
+Chosen instead of Claude on Railway: no API key needed (uses the machine's Claude Code login),
+logs/DB reachable on the office network, and code + credentials stay on company hardware.
+Details and setup: [`worker/README.md`](worker/README.md).
+
+- Leases jobs paused at step 3 through the runner's API (`/agent/jobs/claim-local`, behind the
+  dashboard login), runs `claude -p` in `C:\DDP` with a **read-only tool allowlist** (analysis mode),
+  posts the report as a step event and resumes the job with its summary. The runner finishes steps
+  4–9, the result lands in memory, and the learner can turn it into a lesson.
+- Claude usage limit reached → the job is released untouched and retried later.
+- Runner API additions: `POST /agent/jobs/claim-local`, `/agent/jobs/:id/events`, `/agent/jobs/:id/release`.
+- Next mode (not built yet): code change + gradle + review-agent, then stop for approval before
+  commit/PR.
+
+---
+
 ## Changelog
 
 | Date | Change |
 |---|---|
+| 2026-09-28 | **ddp-worker** (`worker/`): runs job step 3 locally with headless Claude Code (subscription login, read-only allowlist: code, git fetch/log/diff, Jira read, memory recall, Elasticsearch logs; DB opt-in), reports back and resumes the job; releases on usage limit. Runner API: claim-local / events / release; store: claimLocal / releaseLocal. 8 worker + 1 API tests. |
+| 2026-09-28 | Learner schedule **paused** on request: cron removed (service kept, restart policy NEVER). Re-enable with Cron `30 */2 * * *` on the `learner` service and a redeploy. |
 | 2026-09-27 | Fix: learner saved the episode before its lessons, so a crash mid-pass left the outcome marked as learned with no lesson. Lessons are now written first and the episode last; outcome signature is versioned (`SIGNATURE_VERSION`) so rule changes re-learn past episodes once. +1 test. |
 | 2026-09-27 | Fix: lesson weight SQL failed on Railway Postgres ("operator is not unique: unknown * unknown"); parameters now cast to `real`. Found by the first live learner run. |
 | 2026-09-27 | **Learning loop**: `learner` cron service (every 2h) scores jobs from Jira outcomes (done +1, QA +0.5, reopened −1, failed −0.5, slow hand-off −0.1), reinforces lessons (EMA), publishes them to team memory; runner step 1 applies top lessons; poller requeues a finished ticket only when Jira changed after the job. New tables `episodes`, `lessons`; 6 new tests. Design note for Claude Code on Railway (not enabled). |

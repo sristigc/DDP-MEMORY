@@ -5,3 +5,6 @@ exports/
 *.export.json
 payload*.json
 node_modules/
+
+# ddp-worker local reports (may contain code/log excerpts)
+worker/reports/

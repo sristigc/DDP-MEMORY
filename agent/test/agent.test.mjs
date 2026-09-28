@@ -160,3 +160,25 @@ test("logger masks credential fields but keeps ids readable", async () => {
   assert.equal(lines[0].NOTIFIER_TOKEN, "***");
   assert.equal(lines[0].password, "***");
 });
+
+test("local worker API: lease a paused job once, record steps, release or resume", async () => {
+  const store = new MemoryStore();
+  const { job } = await store.enqueue({ jiraKey: "DPB-2070" });
+  await store.claim("runner");
+  await store.finish(job.id, "awaiting_local", { nextStep: "pull" });
+  await serve(createApi({ store, stats: {}, log: quiet }), async (base) => {
+    const post = (p, b) => fetch(`${base}${p}`, { method: "POST", body: JSON.stringify(b) });
+    assert.equal((await post("/agent/jobs/claim-local", {})).status, 400, "workerId required");
+    const lease = await post("/agent/jobs/claim-local", { workerId: "laptop-1" });
+    assert.equal(lease.status, 200);
+    assert.equal((await lease.json()).job.jira_key, "DPB-2070");
+    assert.equal((await post("/agent/jobs/claim-local", { workerId: "laptop-2" })).status, 204, "already leased");
+    assert.equal((await post(`/agent/jobs/${job.id}/events`, { step: "logs", type: "bogus", message: "x" })).status, 400);
+    assert.equal((await post(`/agent/jobs/${job.id}/events`, { step: "logs", type: "plan", message: "analysis", data: { report: "## Summary" } })).status, 201);
+    assert.equal((await post(`/agent/jobs/${job.id}/release`, { workerId: "laptop-2" })).status, 409, "only the holder can release");
+    assert.equal((await post(`/agent/jobs/${job.id}/release`, { workerId: "laptop-1" })).status, 200);
+    assert.equal((await post("/agent/jobs/claim-local", { workerId: "laptop-2" })).status, 200, "released jobs can be leased again");
+    assert.equal((await post(`/agent/jobs/${job.id}/resume`, { note: "UPI paths unguarded" })).status, 200);
+    assert.equal((await store.get(job.id)).status, "queued");
+  });
+});
