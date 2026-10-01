@@ -14,6 +14,7 @@
 
 const EVENT_TYPES = new Set(["info", "plan", "handoff", "error", "done"]);
 const WORKER_ID_RE = /^[\w.@-]{1,120}$/;
+const JIRA_KEY_RE = /^[A-Z][A-Z0-9]{1,9}-\d{1,7}$/;
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
 
@@ -73,10 +74,19 @@ export function createApi({ store, stats, log }) {
         const status = url.searchParams.get("status") || undefined;
         return send(res, 200, { jobs: await store.list({ status, limit: 100 }) });
       }
+      if (req.method === "POST" && parts.length === 2) { // manual (re)queue of a ticket, e.g. to retry it
+        const { jiraKey, summary = "", url: link = "" } = await readJson(req);
+        if (!JIRA_KEY_RE.test(String(jiraKey || ""))) return send(res, 400, { error: "jiraKey like DPB-2070 is required" });
+        if (link && !/^https:\/\/[^\s"<>]+$/.test(link)) return send(res, 400, { error: "url must be https" });
+        const { created, job } = await store.enqueue({ jiraKey, summary: String(summary).slice(0, 300), url: link });
+        log.info(created ? "job queued manually" : "ticket already has an open job", { jobId: job.id, jiraKey });
+        return send(res, created ? 201 : 200, { created, job });
+      }
       if (req.method === "POST" && parts[2] === "claim-local" && parts.length === 3) {
-        const { workerId } = await readJson(req);
+        const { workerId, jiraKey = null } = await readJson(req);
         if (!WORKER_ID_RE.test(String(workerId || ""))) return send(res, 400, { error: "workerId is required (letters, digits, . _ - @)" });
-        const job = await store.claimLocal(workerId);
+        if (jiraKey !== null && !JIRA_KEY_RE.test(String(jiraKey))) return send(res, 400, { error: "jiraKey must look like DPB-2070" });
+        const job = await store.claimLocal(workerId, undefined, jiraKey);
         if (!job) { res.writeHead(204).end(); return; }
         log.info("job leased to local worker", { jobId: job.id, jiraKey: job.jira_key, workerId });
         return send(res, 200, { job, events: await store.events(job.id) });

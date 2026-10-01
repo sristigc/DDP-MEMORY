@@ -12,7 +12,7 @@ import * as realGit from "./git.mjs";
  * @returns {Promise<{ status: "idle"|"done"|"awaiting-approval"|"usage-limit"|"error", jobId?: number, jiraKey?: string, error?: string }>}
  */
 export async function processOne({ api, cfg, run, git = realGit, log, now = () => new Date() }) {
-  const lease = await api.claim(cfg.workerId);
+  const lease = await api.claim(cfg.workerId, cfg.ticket);
   if (!lease) return { status: "idle" };
   const { job, events = [] } = lease;
   const r = job.result || {};

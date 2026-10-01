@@ -3,6 +3,7 @@
 // with headless Claude Code in the DDP repo (read-only), and reports back to Railway.
 //   node worker/main.mjs --once    one job (or nothing), then exit
 //   node worker/main.mjs           keep polling (DDP_POLL_MIN, default 10 min)
+//   --ticket DPB-2070              only take jobs for that ticket
 import { assertConfig, loadConfig } from "./config.mjs";
 import { JobsApi } from "./api.mjs";
 import { runClaude } from "./claude.mjs";
@@ -16,7 +17,10 @@ async function main() {
   assertConfig(cfg);
   const api = new JobsApi(cfg);
   const once = process.argv.includes("--once");
-  log(`worker ${cfg.workerId} · mode ${cfg.mode} · repo ${cfg.repoRoot} · DB ${cfg.allowDb ? "read-only allowed" : "off"}`);
+  const t = process.argv.indexOf("--ticket");
+  if (t > 0) cfg.ticket = process.argv[t + 1];
+  if (cfg.ticket && !/^[A-Z][A-Z0-9]{1,9}-d{1,7}$/.test(cfg.ticket)) throw new Error("--ticket needs a Jira key like DPB-2070");
+  log(`worker ${cfg.workerId}${cfg.ticket ? ` · ticket ${cfg.ticket}` : ""} · mode ${cfg.mode} · repo ${cfg.repoRoot} · DB ${cfg.allowDb ? "read-only allowed" : "off"}`);
 
   for (;;) {
     let outcome;

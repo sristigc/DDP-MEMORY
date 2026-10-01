@@ -25,13 +25,16 @@ export const FIX_TOOLS = [
   "Bash(./gradlew:*)", "Bash(gradlew:*)", "Bash(gradlew.bat:*)", "Bash(./gradlew.bat:*)",
   "mcp__agentmemory__memory_smart_search", "mcp__agentmemory__memory_recall",
 ];
+// A deny always beats an allow in Claude Code, so Edit/Write are denied only when the pass doesn't grant them.
+const EDIT_TOOLS = ["Edit", "Write"];
 export const NEVER_TOOLS = ["Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(git pull:*)", "Bash(git worktree:*)", "Bash(git switch:*)", "Bash(git rebase:*)", "Bash(git merge:*)", "Bash(git stash:*)"];
 
 const USAGE_RE = /usage limit|limit reached|rate limit|quota|out of (credits|usage)|429/i;
 
 export function claudeArgs({ allowDb = false, tools } = {}) {
   const allowed = tools || (allowDb ? [...ANALYSE_TOOLS, ...DB_TOOLS] : ANALYSE_TOOLS);
-  return ["-p", "--output-format", "json", "--allowedTools", allowed.join(","), "--disallowedTools", NEVER_TOOLS.join(",")];
+  const denied = NEVER_TOOLS.filter((t) => !(EDIT_TOOLS.includes(t) && allowed.includes(t)));
+  return ["-p", "--output-format", "json", "--allowedTools", allowed.join(","), "--disallowedTools", denied.join(",")];
 }
 
 const winQuote = (a) => (/[\s"(),*:]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);

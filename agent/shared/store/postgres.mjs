@@ -64,8 +64,8 @@ export class PostgresStore {
   }
 
   // ---------- local worker (ddp-worker on an office machine) ----------
-  /** Leases the oldest job paused for a local step; a lease older than staleAfterMs can be taken over. */
-  async claimLocal(workerId, staleAfterMs = 60 * 60e3) {
+  /** Leases the oldest job paused for a local step (optionally only for one ticket); a lease older than staleAfterMs can be taken over. */
+  async claimLocal(workerId, staleAfterMs = 60 * 60e3, jiraKey = null) {
     const res = await this.pool.query(
       `UPDATE jobs SET locked_by = $1, locked_at = now(), updated_at = now()
        WHERE id = (
@@ -73,11 +73,12 @@ export class PostgresStore {
          WHERE status = 'awaiting_local'
            AND (locked_by IS NULL OR locked_at < now() - ($2::bigint * interval '1 millisecond'))
            AND (COALESCE(result->>'phase', '') <> 'awaiting_approval' OR result ? 'decision')
+           AND ($3::text IS NULL OR jira_key = $3)
          ORDER BY id
          FOR UPDATE SKIP LOCKED
          LIMIT 1)
        RETURNING *`,
-      [workerId, staleAfterMs],
+      [workerId, staleAfterMs, jiraKey],
     );
     return res.rows[0] || null;
   }

@@ -9,7 +9,7 @@
 //   resume(jobId, note)                         -> job | null   (awaiting_local -> queued; keeps result.nextStep)
 //   get(jobId) / events(jobId) / list({ status, limit })
 // Local worker (ddp-worker):
-//   claimLocal(workerId, staleAfterMs) -> job | null   (lease an awaiting_local job; stale leases can be taken over)
+//   claimLocal(workerId, staleAfterMs, jiraKey?) -> job | null   (lease an awaiting_local job, optionally for one ticket; stale leases can be taken over)
 //   releaseLocal(jobId, workerId)      -> job | null   (give the lease back untouched)
 //   patchResult(jobId, patch)          -> job          (merge into result; phase "awaiting_approval" pauses leasing until a decision)
 // Learning loop:

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { processOne } from "../process.mjs";
-import { UsageLimitError, runClaude, claudeArgs, ANALYSE_TOOLS, NEVER_TOOLS } from "../claude.mjs";
+import { UsageLimitError, runClaude, claudeArgs, ANALYSE_TOOLS, FIX_TOOLS, NEVER_TOOLS } from "../claude.mjs";
 import { buildPrompt, summaryOf, fixTargetOf, buildResultOf } from "../prompt.mjs";
 import { validateTarget } from "../git.mjs";
 import { loadConfig, assertConfig } from "../config.mjs";
@@ -18,7 +18,7 @@ function fakeApi(lease) {
   const calls = [];
   return {
     calls,
-    async claim(id) { calls.push(["claim", id]); return lease; },
+    async claim(id, key) { calls.push(["claim", id, key]); return lease; },
     async event(id, ev) { calls.push(["event", id, ev.type, ev.step]); return { ok: true }; },
     async release(id, w) { calls.push(["release", id, w]); return {}; },
     async resume(id, note) { calls.push(["resume", id, note]); return {}; },
@@ -33,6 +33,12 @@ test("no paused job: idle, nothing else called", async () => {
   const api = fakeApi(null);
   assert.deepEqual(await processOne({ api, cfg: cfgFor(tmp()), run: async () => ({}), log: quiet }), { status: "idle" });
   assert.equal(api.calls.length, 1);
+});
+
+test("--ticket limits the lease to one Jira key", async () => {
+  const api = fakeApi(null);
+  await processOne({ api, cfg: { ...cfgFor(tmp()), ticket: "DPB-2070" }, run: async () => ({}), log: quiet });
+  assert.deepEqual(api.calls[0], ["claim", "laptop-test", "DPB-2070"]);
 });
 
 test("success: report saved locally, posted as a step event, job resumed with the summary", async () => {
@@ -72,6 +78,13 @@ test("allowlist is read-only: no edit/write/commit/push tools can be allowed", (
   assert.equal(args[args.indexOf("--disallowedTools") + 1], NEVER_TOOLS.join(","));
   assert.ok(!claudeArgs().join(" ").includes("mysqlsh"), "DB is opt-in");
   assert.ok(claudeArgs({ allowDb: true }).join(" ").includes("mysqlsh"));
+});
+
+test("fix pass can really edit: Edit/Write are not also denied, but git push/commit still are", () => {
+  const args = claudeArgs({ tools: FIX_TOOLS });
+  const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
+  assert.ok(!denied.includes("Edit") && !denied.includes("Write"), "a deny would override the allow");
+  assert.ok(denied.includes("Bash(git push:*)") && denied.includes("Bash(git commit:*)") && denied.includes("NotebookEdit"));
 });
 
 function fakeSpawn(stdout, code = 0) {

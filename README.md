@@ -453,6 +453,8 @@ Details and setup: [`worker/README.md`](worker/README.md).
 - **Fix mode** (`DDP_WORKER_MODE=fix`): fresh worktree from `origin/<base>`, Claude edits + `gradlew build`
   there, then the job waits on the **review page** (`/agent/jobs/<id>/review`, Approve / Reject). Only after
   approval does the worker commit, push and open a **draft PR**. Runner API: `/phase`, `/approve`, `/reject`, `/review`.
+- **Retry a ticket by hand**: `POST /agent/jobs {"jiraKey":"DPB-2070"}` (dashboard login) queues a new job
+  once the previous one has finished; an open job is reused, never duplicated.
 
 ---
 
@@ -460,6 +462,8 @@ Details and setup: [`worker/README.md`](worker/README.md).
 
 | Date | Change |
 |---|---|
+| 2026-10-01 | Worker `--ticket <KEY>` (and `jiraKey` on `claim-local`) to work one specific ticket, e.g. for a demo, without taking older waiting jobs first. +1 worker, +1 API test. |
+| 2026-09-28 | First live fix-mode run on DPB-2070: analysis + worktree worked, but the fix pass could not edit because `Edit`/`Write` were also in `--disallowedTools` (a deny beats an allow). Now denied only when the pass does not grant them. Added `POST /agent/jobs` to re-queue a ticket by hand. +1 worker, +1 API test. |
 | 2026-09-28 | **ddp-worker fix mode**: isolated worktree from origin/<base>, fix + gradle build by headless Claude (edit only in the worktree; commit/push/pull still blocked), approval gate with a review page (Approve / Reject) before the worker commits, pushes and opens a draft PR. Runner keeps local-step results when finishing a job. +5 worker, +1 API tests. |
 | 2026-09-28 | **ddp-worker** (`worker/`): runs job step 3 locally with headless Claude Code (subscription login, read-only allowlist: code, git fetch/log/diff, Jira read, memory recall, Elasticsearch logs; DB opt-in), reports back and resumes the job; releases on usage limit. Runner API: claim-local / events / release; store: claimLocal / releaseLocal. 8 worker + 1 API tests. |
 | 2026-09-28 | Learner schedule **paused** on request: cron removed (service kept, restart policy NEVER). Re-enable with Cron `30 */2 * * *` on the `learner` service and a redeploy. |

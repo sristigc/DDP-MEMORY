@@ -48,6 +48,13 @@ If your Claude usage limit is reached, the job is **released untouched** and ret
    (needs push rights; the PR body says it was agent-made and human-approved). **Reject** → worktree removed,
    nothing committed. Either way the job resumes and the runner finishes steps 4–9.
 
+### Retry a ticket
+A finished job is not picked up again. To re-run a ticket, queue a new job (dashboard login):
+```bash
+curl -u "$DDP_API_USER:$DDP_API_PASS" -X POST <dashboard>/agent/jobs -d '{"jiraKey":"DPB-2070"}'
+```
+The runner does steps 1–2 and pauses it; the next worker poll picks it up.
+
 ## Setup (once)
 ```powershell
 setx DDP_API_USER "<dashboard AUTH_USER>"
@@ -65,6 +72,7 @@ sessions use.
 cd C:/DDP-MEMORY/worker
 node main.mjs --once     # one job (or "no paused jobs"), then exit — use this for the first trial
 node main.mjs            # keep polling every DDP_POLL_MIN (10) minutes
+node main.mjs --once --ticket DPB-2070   # only that ticket (skips older waiting jobs)
 npm test                 # unit tests (no network, no Claude)
 ```
 To run it in the background at logon: Windows Task Scheduler → *Create Basic Task* → trigger

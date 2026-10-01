@@ -161,6 +161,32 @@ test("logger masks credential fields but keeps ids readable", async () => {
   assert.equal(lines[0].password, "***");
 });
 
+test("manual queue: validates the key, adds a new job after the old one finished, never a duplicate", async () => {
+  const store = new MemoryStore();
+  const { job } = await store.enqueue({ jiraKey: "DPB-2070" });
+  await store.finish(job.id, "succeeded", {});
+  await serve(createApi({ store, stats: {}, log: quiet }), async (base) => {
+    const post = (b) => fetch(`${base}/agent/jobs`, { method: "POST", body: JSON.stringify(b) });
+    assert.equal((await post({ jiraKey: "drop table" })).status, 400);
+    assert.equal((await post({ jiraKey: "DPB-2070", url: "javascript:x" })).status, 400);
+    const first = await post({ jiraKey: "DPB-2070", summary: "retry" });
+    assert.equal(first.status, 201);
+    assert.notEqual((await first.json()).job.id, job.id);
+    assert.equal((await post({ jiraKey: "DPB-2070" })).status, 200, "open job reused, not duplicated");
+  });
+});
+
+test("claim-local can be limited to one ticket", async () => {
+  const store = new MemoryStore();
+  for (const k of ["HDP-11583", "DPB-2070"]) { const { job } = await store.enqueue({ jiraKey: k }); await store.finish(job.id, "awaiting_local", {}); }
+  await serve(createApi({ store, stats: {}, log: quiet }), async (base) => {
+    const post = (b) => fetch(`${base}/agent/jobs/claim-local`, { method: "POST", body: JSON.stringify(b) });
+    assert.equal((await post({ workerId: "w", jiraKey: "bad key" })).status, 400);
+    assert.equal((await (await post({ workerId: "w", jiraKey: "DPB-2070" })).json()).job.jira_key, "DPB-2070", "skips the older HDP job");
+    assert.equal((await post({ workerId: "w", jiraKey: "DPB-2070" })).status, 204);
+  });
+});
+
 test("local worker API: lease a paused job once, record steps, release or resume", async () => {
   const store = new MemoryStore();
   const { job } = await store.enqueue({ jiraKey: "DPB-2070" });

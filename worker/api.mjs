@@ -23,7 +23,7 @@ export class JobsApi {
     return json;
   }
 
-  claim(workerId) { return this.call("POST", "/jobs/claim-local", { workerId }); }
+  claim(workerId, jiraKey = null) { return this.call("POST", "/jobs/claim-local", jiraKey ? { workerId, jiraKey } : { workerId }); }
   event(jobId, ev) { return this.call("POST", `/jobs/${jobId}/events`, ev); }
   release(jobId, workerId) { return this.call("POST", `/jobs/${jobId}/release`, { workerId }); }
   resume(jobId, note) { return this.call("POST", `/jobs/${jobId}/resume`, { note }); }

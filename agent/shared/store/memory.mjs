@@ -53,12 +53,13 @@ export class MemoryStore {
   }
 
   // ---------- local worker (ddp-worker on an office machine) ----------
-  async claimLocal(workerId, staleAfterMs = 60 * 60e3) {
+  async claimLocal(workerId, staleAfterMs = 60 * 60e3, jiraKey = null) {
     const now = Date.now();
     const job = [...this.jobs.values()]
       .filter((j) => j.status === "awaiting_local" && (!j.locked_by || Date.parse(j.locked_at) < now - staleAfterMs))
       // A fix waiting for a human decision is not work for the worker until approved or rejected.
       .filter((j) => j.result?.phase !== "awaiting_approval" || j.result?.decision)
+      .filter((j) => !jiraKey || j.jira_key === jiraKey)
       .sort((a, b) => a.id - b.id)[0];
     if (!job) return null;
     Object.assign(job, { locked_by: workerId, locked_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() });
