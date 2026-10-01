@@ -8,7 +8,7 @@ import { processOne } from "../process.mjs";
 import { UsageLimitError, runClaude, claudeArgs, ANALYSE_TOOLS, FIX_TOOLS, NEVER_TOOLS } from "../claude.mjs";
 import { buildPrompt, summaryOf, fixTargetOf, buildResultOf } from "../prompt.mjs";
 import { validateTarget } from "../git.mjs";
-import { loadConfig, assertConfig } from "../config.mjs";
+import { loadConfig, assertConfig, parseArgs } from "../config.mjs";
 
 const quiet = () => {};
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "ddpw-"));
@@ -183,4 +183,11 @@ test("analysis target parsing and validation guard the git commands", () => {
   assert.equal(buildResultOf("x\nDDP_BUILD: FAIL test X broke"), "FAIL test X broke");
   assert.throws(() => validateTarget({ repo: "../../etc", base: "main" }, "C:/DDP"), /valid microservice repo/);
   assert.throws(() => validateTarget({ repo: "novopay-platform-actor", base: "--upload-pack=x" }, "C:/DDP"), /invalid base branch/);
+});
+
+test("parseArgs: --once and --ticket <KEY>, invalid keys rejected", () => {
+  assert.deepEqual(parseArgs(["--once", "--ticket", "DPB-2070"]), { once: true, ticket: "DPB-2070" });
+  assert.deepEqual(parseArgs([]), { once: false, ticket: null });
+  assert.throws(() => parseArgs(["--ticket"]), /Jira key/);
+  assert.throws(() => parseArgs(["--ticket", "dpb 2070"]), /Jira key/);
 });

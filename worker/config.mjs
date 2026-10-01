@@ -21,6 +21,14 @@ export function loadConfig(env = process.env) {
   };
 }
 
+/** Command-line flags: --once, --ticket <KEY>. */
+export function parseArgs(argv) {
+  const t = argv.indexOf("--ticket");
+  const ticket = t >= 0 ? argv[t + 1] : null;
+  if (t >= 0 && !/^[A-Z][A-Z0-9]{1,9}-\d{1,7}$/.test(String(ticket))) throw new Error("--ticket needs a Jira key like DPB-2070");
+  return { once: argv.includes("--once"), ticket };
+}
+
 export function assertConfig(cfg) {
   const missing = [];
   if (!cfg.apiUser) missing.push("DDP_API_USER");
